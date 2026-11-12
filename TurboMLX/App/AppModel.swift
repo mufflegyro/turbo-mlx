@@ -431,7 +431,7 @@ final class AppModel {
             // The server downloads the repository's files as configured; the Quality mode's
             // extra files arrive with its own catalog entry (M4 keeps remote simple).
             do {
-                try (backend as? RemoteBackend)?.downloadModel(id: model.id)
+                try (backend as? RemoteBackend)?.downloadModel(model)
             } catch {
                 alert = AppAlert(title: "Couldn't reach the render Mac", message: error.localizedDescription, offersLog: true)
             }
@@ -450,7 +450,7 @@ final class AppModel {
     func download(_ model: ModelDescriptor) {
         if let remote = backend as? RemoteBackend {
             do {
-                try remote.downloadModel(id: model.id)
+                try remote.downloadModel(model)
             } catch {
                 alert = AppAlert(title: "Couldn't reach the render Mac", message: error.localizedDescription, offersLog: true)
             }

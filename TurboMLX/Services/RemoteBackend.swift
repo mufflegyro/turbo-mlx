@@ -212,22 +212,27 @@ final class RemoteBackend: EngineTransport {
         return String(SHA256.hash(data: Data(joined.utf8)).map { String(format: "%02x", $0) }.joined().prefix(16))
     }
 
-    func downloadModel(id: String) throws {
+    func downloadModel(_ model: ModelDescriptor) throws {
         guard webSocket != nil else { throw BackendController.BackendError.notRunning }
-        let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
+        let encoded = model.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? model.id
         Task { [weak self] in
             guard let self else { return }
             do {
                 var request = self.url("models/\(encoded)/download")
                 request.httpMethod = "POST" // the server routes downloads by verb (GET is its 404)
+                // The descriptor travels with the request: a model added by hand (a custom
+                // repository) is not in the relay's built-in catalog, and this is how the
+                // server learns what to download.
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpBody = try JSONEncoder().encode(model)
                 let (data, response) = try await self.session.data(for: request)
                 if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                     let message = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["error"] as? String
                         ?? "the server refused the download"
-                    self.failDownload(id: id, message: message)
+                    self.failDownload(id: model.id, message: message)
                 }
             } catch {
-                self.failDownload(id: id, message: error.localizedDescription)
+                self.failDownload(id: model.id, message: error.localizedDescription)
             }
         }
     }
