@@ -32,6 +32,8 @@ nonisolated struct WorkerEvent: Decodable, Sendable {
     var mlx: String?
     var device: String?
     var memory: Int64?
+    /// The families the backend runs (A5): the server reports its catalog's coverage.
+    var families: [String]?
 
     private static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()

@@ -108,6 +108,7 @@ private struct ModelsSettings: View {
             }
             ModelsFolderSection()
             HuggingFaceTokenSection()
+            RemoteRenderSection()
         }
         .formStyle(.grouped)
         .confirmsTrashing($modelToTrash)
@@ -116,13 +117,72 @@ private struct ModelsSettings: View {
     private func subtitle(for model: ModelDescriptor) -> String {
         let state = if app.isInstalled(model) {
             "Downloaded"
-        } else if let files = app.downloadFiles(of: model), !app.downloads.isDownloading(model) {
+        } else if let files = app.downloadFiles(of: model), !app.isDownloading(model) {
             "Partly downloaded (\(Format.bytes(files.bytes)))"
+        } else if app.isDownloading(model) {
+            "Downloading on the render Mac…"
         } else {
             "Not downloaded"
         }
         let size = model.sizeBytes.map { " · \(Format.bytes($0))" } ?? ""
         return "\(state)\(size) · \(model.id)"
+    }
+}
+
+/// The render Mac (TurboRelay): when enabled, models download and run there, and this Mac
+/// only drives the UI. The pairing token comes from the menu bar app on that Mac.
+private struct RemoteRenderSection: View {
+    @Environment(AppModel.self) private var app
+    @State private var enabled = false
+    @State private var address = ""
+    @State private var token = ""
+
+    var body: some View {
+        Section {
+            Toggle("Render on another Mac", isOn: $enabled)
+            if enabled {
+                TextField("Server address", text: $address, prompt: Text("http://192.168.1.20:7700"))
+                    .textFieldStyle(.roundedBorder)
+                SecureField("Pairing token", text: $token, prompt: Text("copy it from the menu bar app"))
+                    .textFieldStyle(.roundedBorder)
+                if app.isRemote {
+                    LabeledContent("Status", value: backendStatus)
+                }
+                if app.catalogDrift {
+                    Text("The render Mac's model list differs from this app's — update whichever is older.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                HStack {
+                    Button("Apply") { app.applyTransport(enabled: enabled, address: address, token: token) }
+                        .disabled(address.isEmpty)
+                    if !address.isEmpty {
+                        Text("Switching stops the local engine and reloads the model list.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } header: {
+            Text("Render Mac")
+        } footer: {
+            Text("TurboRelay runs on the more powerful Mac and keeps the models; this app stays in control. Pictures and prompts still never leave your network.")
+        }
+        .onAppear {
+            enabled = app.remoteEnabled
+            address = app.remoteAddress
+            token = app.remoteToken
+        }
+    }
+
+    private var backendStatus: String {
+        switch app.backend.status {
+        case .checking: "Checking…"
+        case .starting: "Connecting…"
+        case .ready: app.backend.info.map { "Connected · \($0.device) · \(Format.memory($0.memory))" } ?? "Connected"
+        case .stopped: "Not connected"
+        case .failed(let message): message
+        }
     }
 }
 

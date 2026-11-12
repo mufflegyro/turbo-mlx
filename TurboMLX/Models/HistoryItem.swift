@@ -48,6 +48,10 @@ nonisolated struct HistoryItem: Identifiable, Hashable, Codable, Sendable {
     var peakMemory: Int64?
     /// Seconds per phase (load, encode, denoise, decode, save); older items have none.
     var timings: [String: Double]?
+    /// "relay" when the render ran on a TurboRelay server; nil for this Mac's engine (A7):
+    /// the time estimate fits each backend's history separately, since a faster Mac would
+    /// otherwise skew the seconds it promises.
+    var backend: String?
 
     var prompt: String { request.prompt }
     /// The prompt, or what an upscale did.

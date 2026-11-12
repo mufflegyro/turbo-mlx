@@ -36,9 +36,9 @@ final class AppModel {
         /// The LoRA chosen for the model is not in the library any more, or not for this model.
         case loraMissing(String)
         case loraMismatch(String, base: String)
-        /// The generation should need more memory than this Mac can give (`MemoryEstimate`):
+        /// The generation should need more memory than the render Mac can give (`MemoryEstimate`):
         /// about `needed` GB, and what would bring it within reach.
-        case notEnoughMemory(needed: Int, remedy: String)
+        case notEnoughMemory(needed: Int, machine: String, remedy: String)
 
         var hint: String {
             switch self {
@@ -53,15 +53,99 @@ final class AppModel {
             case .qualityDownloading: "Waiting for the Quality files to download."
             case .loraMissing(let name): "The LoRA \(name) is no longer among your LoRAs: add it again, or choose None."
             case .loraMismatch(let name, let base): "The LoRA \(name) is for \(base), not this model: choose another one, or None."
-            case .notEnoughMemory(let needed, let remedy):
-                "Needs about \(needed) GB of memory, more than this Mac’s \(MemoryEstimate.installed) GB can give: \(remedy)."
+            case .notEnoughMemory(let needed, let machine, let remedy):
+                "Needs about \(needed) GB of memory, more than \(machine) can give: \(remedy)."
             }
         }
     }
 
-    let backend = BackendController()
+    private(set) var backend: any EngineTransport = AppModel.makeTransport()
     let downloads = DownloadCenter()
     let history = HistoryStore()
+
+    /// Whether the models run here or on the render Mac (TurboRelay), from the settings.
+    var isRemote: Bool { backend is RemoteBackend }
+
+    static func makeTransport() -> any EngineTransport {
+        let defaults = UserDefaults.standard
+        if defaults.bool(forKey: Keys.remoteEnabled),
+           let address = defaults.string(forKey: Keys.remoteAddress), !address.isEmpty {
+            return RemoteBackend(serverURLString: address, token: defaults.string(forKey: Keys.remoteToken) ?? "")
+        }
+        return BackendController()
+    }
+
+    /// Sets the render Mac and switches the transport live: jobs on the queue do not survive
+    /// the switch, since the other side knows nothing of them.
+    func applyTransport(enabled: Bool, address: String, token: String) {
+        let defaults = UserDefaults.standard
+        defaults.set(enabled, forKey: Keys.remoteEnabled)
+        defaults.set(address, forKey: Keys.remoteAddress)
+        defaults.set(token, forKey: Keys.remoteToken)
+        downloads.cancelAll()
+        backend.stopWorker()
+        backend = Self.makeTransport()
+        activeJob = nil
+        queue.removeAll()
+        preloadRequested = nil
+        installed = [:]
+        bytesOnDisk = [:]
+        connectTransport()
+        refreshInstalled()
+        queueChanged()
+        backend.ensureWorker()
+    }
+
+    var remoteAddress: String { UserDefaults.standard.string(forKey: Keys.remoteAddress) ?? "" }
+    var remoteToken: String { UserDefaults.standard.string(forKey: Keys.remoteToken) ?? "" }
+    var remoteEnabled: Bool { UserDefaults.standard.bool(forKey: Keys.remoteEnabled) }
+
+    /// The memory the render Mac reports (A4): in remote mode the gate judges the M4 Max's
+    /// RAM, not this Mac's — the server still re-checks authoritatively.
+    var renderMemoryGB: Double {
+        if isRemote, let bytes = backend.info?.memory, bytes > 0 {
+            return Double(bytes) / Double(1 << 30)
+        }
+        return MemoryEstimate.installedGigabytes
+    }
+
+    /// Per-backend history (A7): a faster render Mac's times must not skew the promises this
+    /// Mac makes on its Generate button, and the other way round.
+    var estimateHistory: [HistoryItem] {
+        let remote = isRemote
+        return history.items.filter { ($0.backend == "relay") == remote }
+    }
+
+    private func connectTransport() {
+        backend.onReady = { [weak self] in
+            self?.preloadRequested = nil
+            self?.refreshInstalled() // the render Mac's downloaded models become available (M3)
+            self?.pump()
+            self?.preloadIfUseful()
+        }
+        backend.onEvent = { [weak self] in self?.handle($0) }
+        backend.onCrash = { [weak self] in self?.backendCrashed($0) }
+        if let remote = backend as? RemoteBackend {
+            remote.onModelStatesChange = { [weak self] in self?.transportStatesChanged() }
+            remote.onDisconnected = { [weak self] reason in self?.backendDisconnected(reason) }
+        }
+    }
+
+    /// Download progress from the server changed: refresh availability, and generate when the
+    /// user asked to download-and-generate and the model just arrived.
+    private func transportStatesChanged() {
+        guard let remote = backend as? RemoteBackend else { return }
+        refreshInstalled()
+        var changed = false
+        for (id, state) in remote.modelStates where state.state == "downloaded" && generateAfterDownload == id {
+            generateAfterDownload = nil
+            changed = true
+        }
+        queueChanged()
+        if changed, let model = selectedModel, !settings.trimmedPrompt.isEmpty || !model.family.takesPrompt {
+            generate()
+        }
+    }
     let loraLibrary = LoRALibrary()
     #if !SEALED
     let updater = AppUpdater()
@@ -153,6 +237,9 @@ final class AppModel {
         static let draftSettings = "draftSettings"
         static let draftModel = "draftModelID"
         static let historyOrder = "historyOrder"
+        static let remoteEnabled = "remoteEnabled"
+        static let remoteAddress = "remoteAddress"
+        static let remoteToken = "remoteToken"
     }
 
     /// How the strip arranges the history: by date, or as the user dragged it.
@@ -199,13 +286,7 @@ final class AppModel {
         }
         draft = (settings, selectedModelID)
 
-        backend.onReady = { [weak self] in
-            self?.preloadRequested = nil
-            self?.pump()
-            self?.preloadIfUseful()
-        }
-        backend.onEvent = { [weak self] in self?.handle($0) }
-        backend.onCrash = { [weak self] in self?.backendCrashed($0) }
+        connectTransport()
         downloads.onFinish = { [weak self] in self?.downloadFinished($0) }
         downloads.onQualityFinish = { [weak self] in self?.qualityDownloadFinished($0) }
         refreshInstalled()
@@ -266,6 +347,10 @@ final class AppModel {
     }
 
     func refreshInstalled() {
+        if isRemote {
+            refreshInstalledFromServer()
+            return
+        }
         var found: [String: URL] = [:]
         var bytes: [String: Int64] = [:]
         for model in models {
@@ -284,11 +369,74 @@ final class AppModel {
 
     func hasQualityFiles(_ model: ModelDescriptor) -> Bool { qualityInstalled.contains(model.id) }
 
+    /// Remote mode: the server's catalog decides what is installed (M3). Each downloaded
+    /// model gets a stable alias path (`RemoteBackend.pseudoPath`) that commands carry and
+    /// the transport strips on the wire (A2/A6).
+    private func refreshInstalledFromServer() {
+        guard let remote = backend as? RemoteBackend else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let entries = try await remote.fetchModels()
+                var found: [String: URL] = [:]
+                for entry in entries {
+                    guard let id = entry["id"] as? String, entry["state"] as? String == "downloaded" else { continue }
+                    found[id] = URL(fileURLWithPath: RemoteBackend.pseudoPath(id))
+                }
+                installed = found
+                qualityInstalled = []
+                queueChanged()
+            } catch {
+                // Keep the previous availability; the connection may come back (spec §Job registry).
+            }
+        }
+    }
+
+    /// Download progress for the picker: the server's states in remote mode, DownloadCenter's
+    /// locally.
+    func isDownloading(_ model: ModelDescriptor) -> Bool {
+        if let remote = backend as? RemoteBackend {
+            _ = remote.statesRevision // tracked: callers repaint when states change
+            return remote.modelStates[model.id]?.state == "downloading"
+        }
+        return downloads.isDownloading(model)
+    }
+
+    /// The server-reported download state for one model (from GET /models), for rows that
+    /// have no `model_download` event yet. Reads the tracked revision first: download
+    /// progress and failures land in the (untracked) states dictionary, and without this
+    /// read the picker rows would never repaint.
+    func remoteModelState(_ model: ModelDescriptor) -> RemoteBackend.ModelState? {
+        guard let remote = backend as? RemoteBackend else { return nil }
+        _ = remote.statesRevision
+        return remote.modelStates[model.id]
+    }
+
+    /// The render Mac's model list differs from this app's: one of the two needs updating.
+    var catalogDrift: Bool { (backend as? RemoteBackend)?.catalogDrift ?? false }
+
+    /// The connection dropped. NOT a crash: jobs keep rendering on the render Mac, the queue
+    /// stays, and the transport reconnects on its own — reconcileJobs then delivers whatever
+    /// finished while the connection was down (spec §Job registry).
+    func backendDisconnected(_ reason: String) {
+        backend.log.append("[relay] \(reason)")
+    }
+
     /// Downloads the Quality mode's files of the selected model, then generates with the current
     /// prompt unless it is empty.
     func downloadQuality(generating: Bool = true) {
         guard let model = selectedModel else { return }
         generateAfterQuality = generating && !settings.trimmedPrompt.isEmpty ? model.id : nil
+        if isRemote {
+            // The server downloads the repository's files as configured; the Quality mode's
+            // extra files arrive with its own catalog entry (M4 keeps remote simple).
+            do {
+                try (backend as? RemoteBackend)?.downloadModel(id: model.id)
+            } catch {
+                alert = AppAlert(title: "Couldn't reach the render Mac", message: error.localizedDescription, offersLog: true)
+            }
+            return
+        }
         downloads.startQuality(model, locator: locator)
     }
 
@@ -300,6 +448,14 @@ final class AppModel {
 
     /// Downloads the model (checking the disk has room for what is still missing first).
     func download(_ model: ModelDescriptor) {
+        if let remote = backend as? RemoteBackend {
+            do {
+                try remote.downloadModel(id: model.id)
+            } catch {
+                alert = AppAlert(title: "Couldn't reach the render Mac", message: error.localizedDescription, offersLog: true)
+            }
+            return
+        }
         downloads.start(model, locator: locator)
     }
 
@@ -309,11 +465,15 @@ final class AppModel {
         let isEmpty = model.family.takesPrompt ? settings.trimmedPrompt.isEmpty : !hasReferenceImage
         generateAfterDownload = isEmpty ? nil : model.id
         download(model)
-        if !downloads.isDownloading(model) { generateAfterDownload = nil }
+        if !isDownloading(model) { generateAfterDownload = nil }
     }
 
     func cancelDownload(_ model: ModelDescriptor) {
         if generateAfterDownload == model.id { generateAfterDownload = nil }
+        if let remote = backend as? RemoteBackend {
+            remote.cancelModelDownload(id: model.id)
+            return
+        }
         downloads.cancel(model)
         // What arrived stays, to resume from or to move to the Trash.
         refreshInstalled()
@@ -514,19 +674,20 @@ final class AppModel {
         let frames = model.family.media == .video ? settings.videoFrames
             : model.family.isSong ? Int(settings.songSeconds * 25)
             : model.family.media == .audio ? Int(settings.soundSeconds * 50) : nil
-        guard let peak = MemoryEstimate.peak(model: model, size: size, frames: frames, lowMemory: settings.lowMemory)
+        let memoryGB = renderMemoryGB
+        guard let peak = MemoryEstimate.peak(model: model, size: size, frames: frames, lowMemory: settings.lowMemory, memory: memoryGB)
         else { return nil }
         // A LoRA's matrices stay in memory beside the model's, as large as its file.
         let needed = peak + loraGigabytes(for: model)
-        guard needed > MemoryEstimate.available() else { return nil }
+        guard needed > MemoryEstimate.available(memory: memoryGB) else { return nil }
         let fitsAtAll = { (candidate: ModelDescriptor) in
-            MemoryEstimate.smallestPeak(model: candidate).map { $0 <= MemoryEstimate.available() } ?? false
+            MemoryEstimate.smallestPeak(model: candidate).map { $0 <= MemoryEstimate.available(memory: memoryGB) } ?? false
         }
         let remedy = if MemoryEstimate.smallestPeak(model: model) != nil, !fitsAtAll(model) {
             models.contains(where: fitsAtAll) ? "choose another model" : "the models need a Mac with more memory"
         } else if !settings.lowMemory,
-                  let saving = MemoryEstimate.peak(model: model, size: size, frames: frames, lowMemory: true),
-                  saving <= MemoryEstimate.available() {
+                  let saving = MemoryEstimate.peak(model: model, size: size, frames: frames, lowMemory: true, memory: memoryGB),
+                  saving <= MemoryEstimate.available(memory: memoryGB) {
             "turn on Save memory"
         } else if model.family.isUpscaler {
             "choose a smaller scale"
@@ -535,7 +696,8 @@ final class AppModel {
         } else {
             "choose a smaller size"
         }
-        return .notEnoughMemory(needed: Int(needed.rounded(.up)), remedy: remedy)
+        let machine = isRemote ? "the render Mac" : "this Mac"
+        return .notEnoughMemory(needed: Int(needed.rounded(.up)), machine: machine, remedy: remedy)
     }
 
     /// The settings name a reference image whose file is still there.
@@ -605,7 +767,7 @@ final class AppModel {
             let output = isVideo ? history.newVideoURL(seed: seed) : isObject ? history.newObjectURL(seed: seed)
                 : isSound ? history.newSongURL(seed: seed) : history.newImageURL(seed: seed)
             let job = GenerationJob(model: model, request: request, outputURL: output)
-            job.plan = TimeEstimate.plan(model: model, request: request, history: history.items, models: models)
+            job.plan = TimeEstimate.plan(model: model, request: request, history: estimateHistory, models: models)
             queue.append(job)
         }
         viewer = .live
@@ -727,7 +889,7 @@ final class AppModel {
                 // A length the model picked: the clip it will make, planned again.
                 if job.request.autoDuration == true, let frames = event.frames {
                     job.settleFrames(frames)
-                    job.plan = TimeEstimate.plan(model: job.model, request: job.request, history: history.items, models: models)
+                    job.plan = TimeEstimate.plan(model: job.model, request: job.request, history: estimateHistory, models: models)
                 }
                 job.beginDenoising()
             case "decoding": job.phase = .decoding
@@ -797,7 +959,8 @@ final class AppModel {
             request: request,
             seconds: event.seconds ?? job.startedAt.map { Date().timeIntervalSince($0) } ?? 0,
             peakMemory: event.peakMemory,
-            timings: event.timings
+            timings: event.timings,
+            backend: isRemote ? "relay" : nil
         ))
         if viewer == .job(job.id) { viewer = .item(job.id) }
         activeJob = nil

@@ -28,5 +28,7 @@
 			</array>
 		</dict>
 	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Turbo MLX connects to a TurboRelay server on your network to run its models on that Mac.</string>
 </dict>
 </plist>

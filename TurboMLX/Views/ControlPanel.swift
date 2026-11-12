@@ -355,14 +355,16 @@ private struct ModelStatusRow: View {
     let model: ModelDescriptor
 
     var body: some View {
-        if let progress = app.downloads.active[model.id] {
+        if app.isRemote, let state = app.remoteModelState(model), state.state != "downloaded" {
+            RemoteModelStatusRow(model: model, state: state)
+        } else if let progress = app.downloads.active[model.id] {
             DownloadProgressView(model: model, progress: progress)
         } else if app.isInstalled(model) {
             HStack(spacing: 8) {
                 Label("Ready", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                 if app.isLoaded(model) {
-                    Label("In memory", systemImage: "memorychip")
+                    Label(app.isRemote ? "In memory on the render Mac" : "In memory", systemImage: "memorychip")
                         .foregroundStyle(.secondary)
                         .help("The model is already loaded: the next image starts right away.")
                 }
@@ -396,15 +398,63 @@ private struct ModelStatusRow: View {
     }
 }
 
-/// Warns before a download that this Mac has less memory than the model wants.
+/// A model's status in remote mode: the state comes from the render Mac, and the buttons
+/// drive the server's downloads (M3).
+private struct RemoteModelStatusRow: View {
+    @Environment(AppModel.self) private var app
+    let model: ModelDescriptor
+    let state: RemoteBackend.ModelState
+
+    var body: some View {
+        switch state.state {
+        case "downloading":
+            HStack(spacing: 8) {
+                ProgressView(value: state.total > 0 ? Double(state.bytes) / Double(state.total) : 0)
+                    .progressViewStyle(.linear)
+                Text("\(Format.bytes(state.bytes)) of \(Format.bytes(state.total))")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Button("Cancel") { app.cancelDownload(model) }
+                    .buttonStyle(.borderless)
+            }
+        case "failed":
+            VStack(alignment: .leading, spacing: 6) {
+                if let message = state.message {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .lineLimit(4)
+                        .textSelection(.enabled)
+                }
+                Button("Try Again") { app.download(model) }
+                    .buttonStyle(.borderless)
+            }
+        case "not-downloaded":
+            HStack(spacing: 8) {
+                Text("Not downloaded on the render Mac")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Button("Download") { app.download(model) }
+                    .buttonStyle(.borderless)
+            }
+        default:
+            EmptyView()
+        }
+    }
+}
+
+/// Warns before a download that the machine rendering the models has less memory than the
+/// model wants — this Mac locally, the render Mac in remote mode (`app.renderMemoryGB`).
 private struct MemoryWarning: View {
+    @Environment(AppModel.self) private var app
     let model: ModelDescriptor
 
     var body: some View {
-        let installedGB = Int(ProcessInfo.processInfo.physicalMemory >> 30)
+        let installedGB = Int(app.renderMemoryGB.rounded())
+        let whose = app.isRemote ? "the render Mac has" : "this one has"
         if let recommended = model.recommendedMemoryGB, installedGB < recommended {
             Label(
-                "Made for Macs with at least \(recommended) GB of memory; this one has \(installedGB) GB. It may work, but slowly.",
+                "Made for Macs with at least \(recommended) GB of memory; \(whose) \(installedGB) GB. It may work, but slowly.",
                 systemImage: "exclamationmark.triangle"
             )
             .font(.caption)
@@ -2144,7 +2194,7 @@ private struct GenerateBar: View {
             count: settings.batchCount,
             // A model the queue is using will be in memory by then.
             isLoaded: app.isLoaded(model) || (app.queue.last ?? app.activeJob)?.model.id == model.id,
-            history: app.history.items,
+            history: app.estimateHistory,
             models: app.models
         )
     }

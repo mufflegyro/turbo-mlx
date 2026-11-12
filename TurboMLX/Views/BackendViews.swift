@@ -144,7 +144,7 @@ struct BackendDetails: View {
                     GridRow { Text("Engine").foregroundStyle(.secondary); Text(info.engine) }
                     GridRow { Text("MLX").foregroundStyle(.secondary); Text(info.mlx) }
                     GridRow {
-                        Text("In memory").foregroundStyle(.secondary)
+                        Text(app.isRemote ? "In memory (render Mac)" : "In memory").foregroundStyle(.secondary)
                         Text(loadedModelName ?? "no model")
                     }
                 }
