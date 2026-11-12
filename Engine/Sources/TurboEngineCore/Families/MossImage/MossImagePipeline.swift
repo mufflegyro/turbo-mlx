@@ -60,8 +60,11 @@ public final class MossImageModel: PreviewingFamilyModel, LoRAAdaptable {
     static func loadTransformer(modelPath: URL, config: MossImageConfig, quantize: Int?) throws -> MossImageTransformer {
         let transformer = MossImageTransformer(config: config.transformer)
         var checkpoint = Checkpoint(root: modelPath)
-        try WeightLoading.apply(MossImageTransformer.keys(try checkpoint.loadComponent("transformer")), to: transformer)
-        if let quantize { Self.quantize(transformer, bits: quantize) }
+        let weights = try checkpoint.loadComponent("transformer")
+        try WeightLoading.apply(MossImageTransformer.keys(weights), to: transformer)
+        // A checkpoint saved quantized (its metadata names a level) is not quantized again:
+        // its packed weights and scales are already in that form.
+        if let quantize, checkpoint.bits == nil { Self.quantize(transformer, bits: quantize) }
         return transformer
     }
 
@@ -79,8 +82,9 @@ public final class MossImageModel: PreviewingFamilyModel, LoRAAdaptable {
     static func loadTextEncoder(modelPath: URL, config: MossImageConfig, quantize: Int?) throws -> Qwen35TextEncoder {
         let encoder = Qwen35TextEncoder(config: config.textEncoder)
         var checkpoint = Checkpoint(root: modelPath)
-        try WeightLoading.apply(Qwen35TextEncoder.keys(try checkpoint.loadComponent("text_encoder")), to: encoder)
-        if let quantize { Self.quantize(encoder, bits: quantize) }
+        let weights = try checkpoint.loadComponent("text_encoder")
+        try WeightLoading.apply(Qwen35TextEncoder.keys(weights), to: encoder)
+        if let quantize, checkpoint.bits == nil { Self.quantize(encoder, bits: quantize) }
         return encoder
     }
 
