@@ -16,6 +16,9 @@ struct AddModelSheet: View {
     @State private var family = ModelFamily.ming
     /// FLUX.2 Klein registry key; empty means "infer from the name".
     @State private var kleinVariant = ""
+    /// What the engine does with the weights on loading. Only families whose pipelines take a
+    /// quantization level (MOSS-Image, FLUX 3) offer it.
+    @State private var precision = Precision.asStored
     @State private var repo = ""
     @State private var folder: URL?
     @State private var name = ""
@@ -40,6 +43,33 @@ struct AddModelSheet: View {
         case checking
         case found(ModelCompatibility.Verdict)
         case notFound
+    }
+
+    /// How the engine treats the checkpoint's weights on loading.
+    private enum Precision: Hashable {
+        /// Keep them as the repository saved them (bf16 for the full-precision checkpoints).
+        case asStored
+        /// Quantize to 8 bits while loading: about half the memory, which the smaller Macs need.
+        case eightBit
+
+        var bits: Int? { self == .eightBit ? 8 : nil }
+    }
+
+    /// The families whose pipeline takes a quantization level (the others' repositories are
+    /// used as stored, pre-quantized or not).
+    private static func takesPrecision(_ family: ModelFamily) -> Bool {
+        family == .mossImage || family == .flux3Klein
+    }
+
+    @ViewBuilder
+    private func precisionPicker(_ family: ModelFamily) -> some View {
+        if Self.takesPrecision(family) {
+            Picker("Precision", selection: $precision) {
+                Text("As stored (bf16)").tag(Precision.asStored)
+                Text("8-bit — fits the smaller Macs").tag(Precision.eightBit)
+            }
+            .help("8-bit quantizes the weights while they load: about half the memory, slightly less faithful. An already-quantized checkpoint is always loaded as stored.")
+        }
     }
 
     var body: some View {
@@ -188,6 +218,7 @@ struct AddModelSheet: View {
                     .onAppear { if !families.contains(family) { family = families[0] } }
                     if family == .flux2Klein { kleinVariantPicker }
                 }
+                precisionPicker(effectiveFamily(for: result))
                 TextField("Name", text: $name, prompt: Text(result.name))
                 if result.gated {
                     Label("Gated: accept its terms on huggingface.co and add your token in Settings before it downloads.",
@@ -210,6 +241,7 @@ struct AddModelSheet: View {
                 }
             }
             if family == .flux2Klein { kleinVariantPicker }
+            precisionPicker(family)
 
             switch origin {
             case .folder:
@@ -312,8 +344,14 @@ struct AddModelSheet: View {
         }
     }
 
-    private var suggestedName: String {
-        switch origin {
+    /// The family a search result will be added as: the one Hugging Face's files show, else the
+    /// user's pick (an unknown-family result).
+    private func effectiveFamily(for result: HubModel) -> ModelFamily {
+        if case .supported(let found, _) = ModelCompatibility.assess(result) { return found }
+        return family
+    }
+
+    private var suggestedName: String {        switch origin {
         case .search: selectedResult?.name ?? ""
         case .huggingFace: trimmedRepo.split(separator: "/").last.map(String.init) ?? ""
         case .folder: folder?.lastPathComponent ?? ""
@@ -340,13 +378,19 @@ struct AddModelSheet: View {
         // The sandbox forgets a folder chosen in the panel when the app quits; a bookmark keeps it.
         if origin == .folder, let folder { FolderAccess.remember(folder) }
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A precision only reaches a pipeline that takes one (MOSS-Image, FLUX 3); the other
+        // families keep their checkpoint as stored.
+        let bits = Self.takesPrecision(family) ? precision.bits : nil
+        let quality = bits.map { "in \($0) bits " } ?? ""
         app.addCustomModel(ModelDescriptor(
             name: trimmedName.isEmpty ? suggestedName : trimmedName,
             detail: "Custom \(family.displayName) checkpoint "
+                + quality
                 + (origin == .folder ? "from a local folder." : "from Hugging Face."),
             family: family,
             source: source,
-            variant: variant
+            variant: variant,
+            quantize: bits
         ))
         dismiss()
     }
