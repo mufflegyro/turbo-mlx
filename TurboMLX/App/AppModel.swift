@@ -118,17 +118,32 @@ final class AppModel {
     }
 
     private func connectTransport() {
+        // The transports deliver their callbacks on their own queues (URLSession's, for the
+        // relay; a process pipe's, for the local engine). Everything here lives on the main
+        // actor, so each callback hops there first — reading `pendingJobs` off the main queue
+        // trips Swift's main-actor assertion (SIGTRAP) when a download event arrives.
         backend.onReady = { [weak self] in
-            self?.preloadRequested = nil
-            self?.refreshInstalled() // the render Mac's downloaded models become available (M3)
-            self?.pump()
-            self?.preloadIfUseful()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                preloadRequested = nil
+                refreshInstalled() // the render Mac's downloaded models become available (M3)
+                pump()
+                preloadIfUseful()
+            }
         }
-        backend.onEvent = { [weak self] in self?.handle($0) }
-        backend.onCrash = { [weak self] in self?.backendCrashed($0) }
+        backend.onEvent = { [weak self] event in
+            Task { @MainActor [weak self] in self?.handle(event) }
+        }
+        backend.onCrash = { [weak self] reason in
+            Task { @MainActor [weak self] in self?.backendCrashed(reason) }
+        }
         if let remote = backend as? RemoteBackend {
-            remote.onModelStatesChange = { [weak self] in self?.transportStatesChanged() }
-            remote.onDisconnected = { [weak self] reason in self?.backendDisconnected(reason) }
+            remote.onModelStatesChange = { [weak self] in
+                Task { @MainActor [weak self] in self?.transportStatesChanged() }
+            }
+            remote.onDisconnected = { [weak self] reason in
+                Task { @MainActor [weak self] in self?.backendDisconnected(reason) }
+            }
         }
     }
 
