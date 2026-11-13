@@ -43,6 +43,13 @@ nonisolated enum ModelCompatibility {
         let files = Set(model.files)
         if let (family, variant) = family(of: model) {
             if let missing = missingPiece(of: family, in: files) { return .unsupported(missing) }
+            // The engine reads mflux's saved packs for these families (its loaders were checked
+            // against them); diffusers' originals have other keys, and fail at load with a
+            // keyNotFound rather than here. MOSS-Image is not one of them: its loader reads
+            // OpenMOSS's diffusers folders.
+            if sharedLayout.contains(family), isDiffusersLayout(files) {
+                return .unsupported(diffusersNote)
+            }
             return .supported(family, variant: variant)
         }
         if let base = model.baseModels.first {
@@ -52,8 +59,21 @@ nonisolated enum ModelCompatibility {
         // No base and no telling name: Ming-Image's folders are its own, the others share theirs.
         if missingPiece(of: .ming, in: files) == nil { return .supported(.ming, variant: nil) }
         let fitting = sharedLayout.filter { missingPiece(of: $0, in: files) == nil }
+        if !fitting.isEmpty, isDiffusersLayout(files) { return .unsupported(diffusersNote) }
         return fitting.isEmpty ? .unsupported("Its files aren't laid out as an mflux checkpoint.") : .unknownFamily(fitting)
     }
+
+    /// Diffusers' checkpoints (BFL's originals, Hugging Face's conversions) name their shards
+    /// `diffusion_pytorch_model-…` and `model-0000N-of-…`; mflux's saved packs use `0.safetensors`,
+    /// `1.safetensors` and an index. The difference shows in the tensors' keys too.
+    static func isDiffusersLayout(_ files: Set<String>) -> Bool {
+        files.contains { path in
+            let name = path.split(separator: "/").last.map(String.init) ?? path
+            return name.hasPrefix("diffusion_pytorch_model") || name.hasPrefix("model-0000")
+        }
+    }
+
+    static let diffusersNote = "Its weights are saved in diffusers' layout. Turbo MLX runs mflux-format packs: look for the mflux-community conversion of this model."
 
     /// The family from the repository's base model, or else from its name when it names none.
     private static func family(of model: HubModel) -> (ModelFamily, String?)? {
