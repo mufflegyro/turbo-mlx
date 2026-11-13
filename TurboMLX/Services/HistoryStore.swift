@@ -216,6 +216,15 @@ final class HistoryStore {
         save()
     }
 
+    /// Moves an item into the private history (or back to the normal one). The file does not move:
+    /// only the index's flag changes, so the strip's padlock decides what is shown.
+    func setPrivate(_ id: HistoryItem.ID, _ isPrivate: Bool) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        guard items[index].inPrivateHistory != isPrivate else { return }
+        items[index].isPrivate = isPrivate ? true : nil
+        save()
+    }
+
     /// Moves the images to the Trash, so a deletion can still be undone from Finder.
     func remove(_ ids: Set<HistoryItem.ID>) {
         for item in items where ids.contains(item.id) {

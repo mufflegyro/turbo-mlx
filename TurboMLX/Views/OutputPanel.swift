@@ -534,6 +534,13 @@ struct HistoryItemMenu: View {
         Button(Self.openTitle(for: url)) { NSWorkspace.shared.open(url) }
         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([app.url(for: item)]) }
         Divider()
+        Button(item.inPrivateHistory ? "Remove from Private History" : "Move to Private History") {
+            app.setPrivate(item, !item.inPrivateHistory)
+        }
+        .help(item.inPrivateHistory
+              ? "Put it back in the normal history"
+              : "Keep it in the private history, shown when the strip's padlock is on")
+        Divider()
         Button("Move to Trash", role: .destructive) { app.delete([item]) }
     }
 

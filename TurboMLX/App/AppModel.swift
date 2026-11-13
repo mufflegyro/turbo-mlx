@@ -266,9 +266,32 @@ final class AppModel {
     /// The history item under the pointer in the strip, which a drag there moves.
     @ObservationIgnored var pointedHistoryItem: HistoryItem.ID?
 
+    /// The strip's padlock: private history shown, and new generations kept there.
+    var showsPrivateHistory = false
+
+    /// The items the strip shows: the normal history, or the private one while the padlock is on.
+    var visibleHistory: [HistoryItem] {
+        history.items.filter { $0.inPrivateHistory == showsPrivateHistory }
+    }
+
     /// The history left to right, as the strip shows it and ⌘[ ⌘] walk it.
     var arrangedHistory: [HistoryItem] {
-        history.arranged(historyOrder)
+        history.arranged(historyOrder).filter { $0.inPrivateHistory == showsPrivateHistory }
+    }
+
+    /// The padlock: switches which history the strip shows, and where the next generations go.
+    func setPrivateHistory(_ on: Bool) {
+        guard showsPrivateHistory != on else { return }
+        showsPrivateHistory = on
+        // The item being shown has left this list: follow the list now shown.
+        if case .item = viewer { viewer = .live }
+    }
+
+    /// Moves an item between the normal and the private history.
+    func setPrivate(_ item: HistoryItem, _ isPrivate: Bool) {
+        history.setPrivate(item.id, isPrivate)
+        guard isPrivate != showsPrivateHistory, case .item(let shown) = viewer, shown == item.id else { return }
+        viewer = .live
     }
 
     /// A drag in the strip: `id` goes where `target` is, and the strip keeps the custom order from
@@ -783,7 +806,8 @@ final class AppModel {
             }
             let output = isVideo ? history.newVideoURL(seed: seed) : isObject ? history.newObjectURL(seed: seed)
                 : isSound ? history.newSongURL(seed: seed) : history.newImageURL(seed: seed)
-            let job = GenerationJob(model: model, request: request, outputURL: output)
+            let job = GenerationJob(model: model, request: request, outputURL: output,
+                                    isPrivate: showsPrivateHistory)
             job.plan = TimeEstimate.plan(model: model, request: request, history: estimateHistory, models: models)
             queue.append(job)
         }
@@ -1026,7 +1050,8 @@ final class AppModel {
             seconds: event.seconds ?? job.startedAt.map { Date().timeIntervalSince($0) } ?? 0,
             peakMemory: event.peakMemory,
             timings: event.timings,
-            backend: isRemote ? "relay" : nil
+            backend: isRemote ? "relay" : nil,
+            isPrivate: job.isPrivate ? true : nil
         ))
         if viewer == .job(job.id) { viewer = .item(job.id) }
         activeJob = nil
@@ -1062,9 +1087,16 @@ final class AppModel {
     /// The history item the viewer shows, if it shows one.
     var displayedItem: HistoryItem? {
         switch viewer {
-        case .item(let id): history.item(withID: id) ?? history.items.first
-        case .live: activeJob == nil ? history.items.first : nil
-        case .job, .draft: nil
+        case .item(let id):
+            // An item moved to the other history is no longer in the strip: show this one's first.
+            guard let item = history.item(withID: id), item.inPrivateHistory == showsPrivateHistory else {
+                return visibleHistory.first
+            }
+            return item
+        case .live:
+            return activeJob == nil ? visibleHistory.first : nil
+        case .job, .draft:
+            return nil
         }
     }
 
@@ -1136,9 +1168,11 @@ final class AppModel {
         history.remove(ids)
     }
 
+    /// Clears the history the strip shows: the private one while the padlock is on, the normal
+    /// one otherwise. The other list is left alone.
     func clearHistory() {
         viewer = .live
-        history.removeAll()
+        history.remove(Set(visibleHistory.map(\.id)))
     }
 
     /// A generation's prompt blocks, model and settings, as the controls should show them. Its seed

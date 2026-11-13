@@ -22,9 +22,22 @@ struct HistoryStrip: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text("History").font(.headline)
-                Text("\(app.history.items.count)")
+                Text("\(app.visibleHistory.count)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
+                // The padlock: on, the strip shows the private history and the next generations
+                // are kept there; off, the normal history and its generations.
+                Button {
+                    app.setPrivateHistory(!app.showsPrivateHistory)
+                } label: {
+                    Image(systemName: app.showsPrivateHistory ? "lock.fill" : "lock.open")
+                        .foregroundStyle(app.showsPrivateHistory ? Color.active : Color.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help(app.showsPrivateHistory
+                      ? "Private history: only the images kept here are shown, and new ones join them. Click to go back."
+                      : "Show the private history. With it on, the images generated are kept there instead.")
+                .accessibilityLabel(app.showsPrivateHistory ? "Private history shown" : "Show private history")
                 Menu {
                     Picker("Order", selection: $app.historyOrder) {
                         ForEach(HistoryOrder.allCases) { order in
@@ -50,7 +63,7 @@ struct HistoryStrip: View {
                         .disabled(!app.isBusy)
                     Divider()
                     Button("Clear History…", role: .destructive) { confirmsClear = true }
-                        .disabled(app.history.items.isEmpty)
+                        .disabled(app.visibleHistory.isEmpty)
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -61,7 +74,7 @@ struct HistoryStrip: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
 
-            let isEmpty = app.history.items.isEmpty && app.pendingJobs.isEmpty
+            let isEmpty = app.visibleHistory.isEmpty && app.pendingJobs.isEmpty
             // The "+" outside the scroll view, so it is always there: back to the next generation
             // from anywhere in the history in one click, the strip staying where it was scrolled.
             HStack(alignment: .top, spacing: 8) {
@@ -78,7 +91,9 @@ struct HistoryStrip: View {
                                     .id(job.id)
                             }
                             if isEmpty {
-                                Text("Generated images will appear here.")
+                                Text(app.showsPrivateHistory
+                                     ? "Nothing private yet: turn the padlock on and generate, or move an image here from its menu."
+                                     : "Generated images will appear here.")
                                     .font(.callout)
                                     .foregroundStyle(.tertiary)
                                     .frame(height: thumbnailHeight)
@@ -120,14 +135,17 @@ struct HistoryStrip: View {
         .frame(height: thumbnailHeight + 48)
         .background(.background)
         .confirmationDialog(
-            "Clear the history?",
+            app.showsPrivateHistory ? "Clear the private history?" : "Clear the history?",
             isPresented: $confirmsClear
         ) {
-            Button("Move \(app.history.items.count) Images to the Trash", role: .destructive) {
+            Button("Move \(app.visibleHistory.count) \(app.showsPrivateHistory ? "Private " : "")Images to the Trash",
+                   role: .destructive) {
                 app.clearHistory()
             }
         } message: {
-            Text("The images go to the Trash, so you can still recover them from Finder.")
+            Text(app.showsPrivateHistory
+                 ? "Only the images kept in the private history go to the Trash; the normal history stays."
+                 : "The images go to the Trash, so you can still recover them from Finder.")
         }
     }
 }

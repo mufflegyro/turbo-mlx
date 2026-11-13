@@ -52,6 +52,12 @@ nonisolated struct HistoryItem: Identifiable, Hashable, Codable, Sendable {
     /// the time estimate fits each backend's history separately, since a faster Mac would
     /// otherwise skew the seconds it promises.
     var backend: String?
+    /// Kept in the private history (the strip's padlock): true when it was generated with the
+    /// padlock on, or moved there from its menu. Optional so history written before this reads.
+    var isPrivate: Bool?
+
+    /// Whether the strip's padlock shows it.
+    var inPrivateHistory: Bool { isPrivate == true }
 
     var prompt: String { request.prompt }
     /// The prompt, or what an upscale did.

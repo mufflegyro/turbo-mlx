@@ -36,6 +36,8 @@ final class GenerationJob: Identifiable {
     let model: ModelDescriptor
     private(set) var request: GenerationRequest
     let outputURL: URL
+    /// Whether the image joins the private history: the padlock's state when Generate was pressed.
+    let isPrivate: Bool
     /// A clip whose length the model picks: whether the engine has said which (until then
     /// `request.frames` is the longest it may be).
     private(set) var framesSettled = false
@@ -63,10 +65,11 @@ final class GenerationJob: Identifiable {
     private(set) var preview: NSImage?
     private(set) var previewStep = 0
 
-    init(model: ModelDescriptor, request: GenerationRequest, outputURL: URL) {
+    init(model: ModelDescriptor, request: GenerationRequest, outputURL: URL, isPrivate: Bool = false) {
         self.model = model
         self.request = request
         self.outputURL = outputURL
+        self.isPrivate = isPrivate
     }
 
     var totalSteps: Int { reportedTotal ?? request.steps }
