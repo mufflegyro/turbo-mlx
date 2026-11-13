@@ -789,7 +789,7 @@ private struct PromptSection: View {
     @Binding var settings: GenerationSettings
     var focus: FocusState<PromptBlock.ID?>.Binding
     var title = "Prompt"
-    @Environment(\.openWindow) private var openWindow
+    @Environment(AppModel.self) private var app
 
     /// The block being dragged; back to nil when it's let go, or when the drag is cancelled.
     @GestureState(resetTransaction: Transaction(animation: .snappy)) private var drag: BlockDrag? = nil
@@ -838,11 +838,11 @@ private struct PromptSection: View {
                     Button("Add Prompt Block", systemImage: "plus") { addBlock() }
                         .labelStyle(.titleAndIcon)
                         .help("Add a block at the end: the blocks are joined, in order, into one prompt")
-                    Button("Prompt Library…", systemImage: "text.book.closed") {
-                        openWindow(id: WindowID.prompts)
+                    Button("Styles & Prompts…", systemImage: "text.book.closed") {
+                        app.showsPromptLibrary = true
                     }
                     .labelStyle(.titleAndIcon)
-                    .help("Saved prompts: use one, or save this prompt (⌘⇧P)")
+                    .help("Browse style prompts and your saved prompts (⇧⌘P)")
                 }
                 if settings.blocks.count > 1 {
                     Text("The blocks are joined, in order, into one prompt.")

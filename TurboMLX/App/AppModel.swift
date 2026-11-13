@@ -796,6 +796,40 @@ final class AppModel {
 
     var showsDraft: Bool { viewer == .draft }
 
+    /// The Styles & Prompts browser: a sheet on the main window, so it stays in front until closed.
+    var showsPromptLibrary = false
+
+    /// Appends a style prompt to the Style block (creating the block when the prompt has none).
+    /// The prompt alone changes: the model, size, steps, seed, transparency and LoRAs stay.
+    func appendStyle(_ text: String) {
+        let style = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !style.isEmpty else { return }
+        if controlsSource != .draft { startDraft() }
+        if settings.blocks.isEmpty { settings.blocks = PromptBlock.defaults() }
+        let index = settings.blocks.firstIndex { $0.name == PromptBlock.styleName }
+            ?? settings.blocks.firstIndex { $0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        guard let index else {
+            settings.blocks.append(PromptBlock(name: PromptBlock.styleName, text: style))
+            return
+        }
+        let current = settings.blocks[index].text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !current.localizedCaseInsensitiveContains(style) else { return }
+        settings.blocks[index].text = current.isEmpty ? style : current + "\n\n" + style
+    }
+
+    /// Puts a style prompt in the Style block in place of what it holds.
+    func replaceStyle(_ text: String) {
+        let style = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !style.isEmpty else { return }
+        if controlsSource != .draft { startDraft() }
+        if settings.blocks.isEmpty { settings.blocks = PromptBlock.defaults() }
+        if let index = settings.blocks.firstIndex(where: { $0.name == PromptBlock.styleName }) {
+            settings.blocks[index].text = style
+        } else {
+            settings.blocks.append(PromptBlock(name: PromptBlock.styleName, text: style))
+        }
+    }
+
     /// Puts a library prompt in the controls: its blocks and negative prompt, and nothing else —
     /// the model, size, steps, seed, transparency and LoRAs stay as they are. When a history
     /// item's settings are being shown, this returns to the draft first (that is the prompt the

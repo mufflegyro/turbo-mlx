@@ -14,6 +14,13 @@ struct ContentView: View {
         .navigationTitle("Turbo MLX")
         // The name stays the window's (Window menu, Mission Control) but not in the toolbar.
         .toolbar(removing: .title)
+        // A sheet, as in the app this feature comes from: it stays in front until it is closed,
+        // and cannot slip behind the window it belongs to.
+        .sheet(isPresented: Binding(get: { app.showsPromptLibrary },
+                                    set: { app.showsPromptLibrary = $0 })) {
+            PromptLibraryView()
+                .environment(app)
+        }
         .alert(
             app.alert?.title ?? "",
             isPresented: Binding(get: { app.alert != nil }, set: { if !$0 { app.alert = nil } }),

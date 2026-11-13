@@ -52,6 +52,12 @@ ByteDance's SeedVR2 under the Apache License 2.0, as mflux ships it:
   SeedVR2
     https://github.com/ByteDance-Seed/SeedVR
 
+The app bundles the style prompts of the MOSS-Image Character & Style Catalog
+(metadata only, under the MIT license; its sample images are not included):
+
+  MOSS-Image Character & Style Catalog
+    https://huggingface.co/spaces/hide1/MOSS-Image-Character-Catalog
+
 The app contains these libraries:
 
   mlx-swift 0.32.3
