@@ -348,7 +348,9 @@ nonisolated struct ModelDescriptor: Identifiable, Hashable, Codable, Sendable {
         case .flux2Klein: isKleinBase ? 10...60 : 2...12
         // A flow map: told each step's target, it holds up with fewer steps than its 16.
         case .flux3Klein: isKleinBase ? 10...60 : 4...32
-        case .mossImage: 8...60
+        // Few-step distillation adapters exist for 2, 3, 4 and 8 steps; the base model's own
+        // default (50) is unchanged.
+        case .mossImage: 2...60
         case .qwenImage, .qwenImageEdit: 10...50
         case .senseNova: 4...16
         case .ltx2, .ltx25: 4...8

@@ -617,10 +617,10 @@ private struct LoRARow: View {
                         if let words = entry.info?.triggerWords, !words.isEmpty {
                             TriggerWords(words: words)
                         }
-                        // The few-step adapters (MOSS-Image's 8-step DMD among them) are distilled
-                        // for their own step count and guidance 1; run plain, they render mush.
+                        // The few-step adapters (4-step dmd, 8-step DMD, …) are distilled for
+                        // their own step count and guidance 1; run plain, they render mush.
                         if model.family == .mossImage {
-                            Text("If this is a few-step adapter (e.g. 8-step DMD), set 8 steps and guidance to Off.")
+                            Text("If this is a few-step adapter (4-step, 8-step DMD, …), set its own step count and guidance to Off.")
                                 .foregroundStyle(.secondary)
                         }
                     }
