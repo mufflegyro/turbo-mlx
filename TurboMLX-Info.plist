@@ -13,8 +13,10 @@
 	<string>ZX/i7/xaVLBflPcAmSB4K3d5cRn9OCZPN6ojWeAjmt0=</string>
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
+	<!-- This is the TurboRelay/prompt-library build, not upstream's: an automatic update
+	     would replace it with the stock app. Check for updates by hand if ever wanted. -->
 	<key>SUEnableAutomaticChecks</key>
-	<true/>
+	<false/>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
