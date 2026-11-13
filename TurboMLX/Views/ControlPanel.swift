@@ -613,8 +613,16 @@ private struct LoRARow: View {
             } else {
                 switch state {
                 case .ready(_, let entry):
-                    if let words = entry.info?.triggerWords, !words.isEmpty {
-                        TriggerWords(words: words)
+                    VStack(alignment: .leading, spacing: 4) {
+                        if let words = entry.info?.triggerWords, !words.isEmpty {
+                            TriggerWords(words: words)
+                        }
+                        // The few-step adapters (MOSS-Image's 8-step DMD among them) are distilled
+                        // for their own step count and guidance 1; run plain, they render mush.
+                        if model.family == .mossImage {
+                            Text("If this is a few-step adapter (e.g. 8-step DMD), set 8 steps and guidance to Off.")
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 case .missing:
                     Label("No longer among your LoRAs.", systemImage: "exclamationmark.triangle")

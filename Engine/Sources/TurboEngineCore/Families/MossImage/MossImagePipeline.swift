@@ -73,6 +73,12 @@ public final class MossImageModel: PreviewingFamilyModel, LoRAAdaptable {
         get throws {
             if let residentTransformer { return residentTransformer }
             let transformer = try Self.loadTransformer(modelPath: modelPath, config: config, quantize: loadingBits)
+            // Save memory released it to make room for the text encoder: the LoRAs go back on
+            // the transformer that replaces it. Without this the next image would run the
+            // plain model — with a few-step distillation adapter on 8 steps, a blurry mess.
+            for line in try loras.reapply(on: transformer) {
+                Emitter.shared.log(line + " (again, on the reloaded transformer)")
+            }
             residentTransformer = transformer
             return transformer
         }
