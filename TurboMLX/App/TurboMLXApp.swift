@@ -5,6 +5,7 @@ enum WindowID {
     static let main = "main"
     static let log = "log"
     static let acknowledgements = "acknowledgements"
+    static let prompts = "prompts"
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -64,6 +65,14 @@ struct TurboMLXApp: App {
         }
         .defaultSize(width: 780, height: 480)
         .keyboardShortcut("l", modifiers: [.command, .option])
+
+        Window("Prompt Library", id: WindowID.prompts) {
+            PromptLibraryView()
+                .environment(delegate.model)
+                .frame(minWidth: 520, minHeight: 380)
+        }
+        .defaultSize(width: 640, height: 520)
+        .keyboardShortcut("p", modifiers: [.command, .shift])
 
         Window("Acknowledgements", id: WindowID.acknowledgements) {
             AcknowledgementsView()

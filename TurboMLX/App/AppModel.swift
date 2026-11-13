@@ -62,6 +62,7 @@ final class AppModel {
     private(set) var backend: any EngineTransport = AppModel.makeTransport()
     let downloads = DownloadCenter()
     let history = HistoryStore()
+    let promptLibrary = PromptLibrary()
 
     /// Whether the models run here or on the render Mac (TurboRelay), from the settings.
     var isRemote: Bool { backend is RemoteBackend }
@@ -296,6 +297,7 @@ final class AppModel {
         guard !started else { return }
         started = true
         history.load()
+        promptLibrary.load()
         history.pruneReferences(keeping: [settings.referenceImage, settings.lastFrameImage].compactMap { $0 })
         loraLibrary.refresh()
         // The models folder and local model folders before the engine, which inherits the access
@@ -793,6 +795,21 @@ final class AppModel {
     }
 
     var showsDraft: Bool { viewer == .draft }
+
+    /// Puts a library prompt in the controls: its blocks and negative prompt, and nothing else —
+    /// the model, size, steps, seed, transparency and LoRAs stay as they are. When a history
+    /// item's settings are being shown, this returns to the draft first (that is the prompt the
+    /// next image is written with).
+    func use(_ saved: SavedPrompt, undoManager: UndoManager? = nil) {
+        if controlsSource != .draft { startDraft(undoManager: undoManager) }
+        // Fresh ids: a saved block's id must not collide with a block a field still holds.
+        settings.blocks = saved.blocks.map { block in
+            var copy = block
+            copy.id = UUID()
+            return copy
+        }
+        settings.negativePrompt = saved.negativePrompt
+    }
 
     func cancel(_ job: GenerationJob) {
         if let index = queue.firstIndex(where: { $0 === job }) {
