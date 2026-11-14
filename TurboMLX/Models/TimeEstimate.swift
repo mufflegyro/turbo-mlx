@@ -160,6 +160,10 @@ enum TimeEstimate {
         // Qwen-Image's transformer over the image's and the picture's tokens: 745 s for 672 × 880 in
         // 20 steps (mflux; the native engine matched it at 336 × 432), reading the picture ~4 s.
         case .qwenImageEdit: Rates(denoise: 3.2, decode: 3.4, fixed: 5, load: 5)
+        // Not measured yet: Krea 2 shares the Qwen VAE and a similar single-stream transformer,
+        // and Qwen-Image 2.1 keeps the same layout, so Qwen-Image's rates stand in until the
+        // first real renders on the relay Mac.
+        case .krea2, .qwenImage21: Rates(denoise: 2.5, decode: 3.4, fixed: 3.3, load: 5)
         // 8 steps at 512 / 1024 / 2048 px in 7, 27–31 and 150 s; the pixel head is part of each
         // step, so there is no decode to speak of. An edit reads its picture with the prompt
         // (5 s at 1024 px, 17 s at 2048), which the history's fixed part learns.

@@ -219,6 +219,12 @@ struct AddModelSheet: View {
                     if family == .flux2Klein { kleinVariantPicker }
                 }
                 precisionPicker(effectiveFamily(for: result))
+                if effectiveFamily(for: result).engine == .mflux, !app.isRemote {
+                    Label("This family runs on the render Mac's mflux engine: connect one in Settings → Render Mac to use it.",
+                          systemImage: "info.circle")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
                 TextField("Name", text: $name, prompt: Text(result.name))
                 if result.gated {
                     Label("Gated: accept its terms on huggingface.co and add your token in Settings before it downloads.",
@@ -242,6 +248,12 @@ struct AddModelSheet: View {
             }
             if family == .flux2Klein { kleinVariantPicker }
             precisionPicker(family)
+            if family.engine == .mflux, !app.isRemote {
+                Label("This family runs on the render Mac's mflux engine: connect one in Settings → Render Mac to use it.",
+                      systemImage: "info.circle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
 
             switch origin {
             case .folder:

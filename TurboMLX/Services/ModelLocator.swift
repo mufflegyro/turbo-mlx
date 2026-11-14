@@ -83,12 +83,14 @@ nonisolated struct ModelLocator: Sendable {
     /// Mirrors mflux's check: every component folder has its safetensors, and every shard named
     /// by an index is present (a dangling cache symlink does not count). The tokenizer must be
     /// there too: an interrupted download can leave a snapshot with weights but no tokenizer.
+    /// A top-level index (Krea 2's transformer, SenseNova's pack) is checked the same way.
     static func isComplete(_ folder: URL, family: ModelFamily) -> Bool {
         let fileManager = FileManager.default
         guard hasFiles(family.requiredFiles, in: folder) else { return false }
         if let tokenizer = family.tokenizerFile, !fileManager.fileExists(atPath: folder.appending(path: tokenizer).path) {
             return false
         }
+        guard topLevelShardsPresent(in: folder) else { return false }
         return family.components.allSatisfy { component in
             let directory = folder.appending(path: component)
             guard let files = try? fileManager.contentsOfDirectory(atPath: directory.path) else { return false }
@@ -104,5 +106,23 @@ nonisolated struct ModelLocator: Sendable {
                 return Set(weightMap.values).allSatisfy { fileManager.fileExists(atPath: directory.appending(path: $0).path) }
             }
         }
+    }
+
+    /// Every shard a top-level `.safetensors.index.json` names must be on disk too. Krea 2 keeps
+    /// its transformer's shards at the checkpoint's root; a partial download there would
+    /// otherwise pass as complete (the folders' own checks never see it).
+    private static func topLevelShardsPresent(in folder: URL) -> Bool {
+        let fileManager = FileManager.default
+        guard let files = try? fileManager.contentsOfDirectory(atPath: folder.path) else { return false }
+        for index in files where index.hasSuffix(".safetensors.index.json") {
+            guard let data = try? Data(contentsOf: folder.appending(path: index)),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let weightMap = json["weight_map"] as? [String: String], !weightMap.isEmpty
+            else { return false }
+            guard Set(weightMap.values).allSatisfy({ fileManager.fileExists(atPath: folder.appending(path: $0).path) }) else {
+                return false
+            }
+        }
+        return true
     }
 }

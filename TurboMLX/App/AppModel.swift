@@ -91,6 +91,11 @@ final class AppModel {
         preloadRequested = nil
         installed = [:]
         bytesOnDisk = [:]
+        // The mflux families run only on the render Mac: switching back to this Mac's engine
+        // must not leave one selected, out of the picker and impossible to run.
+        if !isRemote, let selected = selectedModel, selected.family.engine == .mflux {
+            selectedModelID = ModelCatalog.defaultModelID
+        }
         connectTransport()
         refreshInstalled()
         queueChanged()
@@ -1051,6 +1056,7 @@ final class AppModel {
             peakMemory: event.peakMemory,
             timings: event.timings,
             backend: isRemote ? "relay" : nil,
+            engine: isRemote ? event.engine : nil,
             isPrivate: job.isPrivate ? true : nil
         ))
         if viewer == .job(job.id) { viewer = .item(job.id) }

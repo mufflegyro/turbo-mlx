@@ -13,9 +13,10 @@ nonisolated enum ModelCompatibility {
     }
 
     /// The models the engine was checked against, by the `base_model` their conversions name: the
-    /// family and, for FLUX.2 Klein, the registry entry. Other bases of the same names (Klein 9B KV,
-    /// Qwen-Image 2.1, Qwen-Image-Edit 2509, Z-Image base) differ in ways the engine does not
-    /// handle, so they are left out until they are ported.
+    /// family and, for FLUX.2 Klein, the registry entry. Krea 2 and Qwen-Image 2.1 are the render
+    /// Mac's mflux families (they do not run on this Mac's engine). Other bases of the same names
+    /// (Klein 9B KV, Qwen-Image-Edit 2509, Z-Image base) differ in ways neither engine handles, so
+    /// they are left out until they are ported.
     static let bases: [String: (family: ModelFamily, variant: String?)] = [
         "inclusionai/ming-image-0.1-design": (.ming, nil),
         "tongyi-mai/z-image-turbo": (.zImageTurbo, nil),
@@ -28,6 +29,9 @@ nonisolated enum ModelCompatibility {
         "qwen/qwen-image": (.qwenImage, nil),
         "qwen/qwen-image-2512": (.qwenImage, nil),
         "qwen/qwen-image-edit-2511": (.qwenImageEdit, nil),
+        "krea/krea-2-turbo": (.krea2, nil),
+        "qwen/qwen-image-2.1": (.qwenImage21, nil),
+        "qwen/qwen-image-2.1-turbo": (.qwenImage21, "qwen-image-2.1-turbo"),
         // mlx-serve's packs of the release, which carry DINOv3 and the VAE's encoder (the release alone does not).
         "speridlabs/idol": (.idol, nil),
         // The MLX packs (`mlx/` holds the DiT and the VAE converted); OpenMOSS's own repository keeps its VAE as a
@@ -35,9 +39,11 @@ nonisolated enum ModelCompatibility {
         "openmoss-team/moss-soundeffect-v2.0": (.mossSoundEffect, nil),
     ]
 
-    /// The families that share mflux's `transformer`, `text_encoder`, `vae` and `tokenizer` layout,
-    /// which the files alone cannot tell apart.
-    static let sharedLayout: [ModelFamily] = [.zImageTurbo, .flux2Klein, .qwenImage, .qwenImageEdit]
+    /// The families that share mflux's component layout, which the files alone cannot tell apart.
+    /// Krea 2 keeps its transformer at the top but its text encoder and VAE in mflux's folders;
+    /// Qwen-Image 2.1 names its tokenizer's folder `processor` (see its `tokenizerFile`).
+    static let sharedLayout: [ModelFamily] = [.zImageTurbo, .flux2Klein, .qwenImage, .qwenImageEdit,
+                                              .krea2, .qwenImage21]
 
     static func assess(_ model: HubModel) -> Verdict {
         let files = Set(model.files)
@@ -86,6 +92,11 @@ nonisolated enum ModelCompatibility {
         if name.contains("moss-soundeffect-v2") { return (.mossSoundEffect, nil) }
         if name.contains("z-image-turbo") { return (.zImageTurbo, nil) }
         if name.contains("qwen-image-edit-2511") { return (.qwenImageEdit, nil) }
+        // The mflux families the render Mac runs: base and Turbo share `qwen-image-2.1`.
+        if name.contains("krea-2") || name.contains("krea2") { return (.krea2, nil) }
+        if name.contains("qwen-image-2-1") || name.contains("qwen-image-2.1") || name.contains("qwen-2-1") {
+            return (.qwenImage21, name.contains("turbo") ? "qwen-image-2.1-turbo" : nil)
+        }
         if name.contains("klein"), ["flux2", "flux.2", "flux-2"].contains(where: name.contains), !name.contains("kv") {
             let size = name.contains("9b") ? "9b" : "4b"
             return (.flux2Klein, name.contains("base") ? "flux2-klein-base-\(size)" : "flux2-klein-\(size)")

@@ -27,6 +27,10 @@ nonisolated enum LoRABase: Hashable, Sendable {
     /// FLUX 3 Image Klein (one width, 3072).
     case flux3
     case qwenImage
+    /// Krea 2 (its official style adapters name `krea/Krea-2-Turbo`).
+    case krea2
+    /// Qwen-Image 2.1 base and Turbo (one wider transformer than Qwen-Image 1.x).
+    case qwenImage21
     /// MOSS-Image (OpenMOSS, Apache 2.0): the DMD 8-step distillation adapters and the library's.
     case moss
     /// LTX-2.3 and LTX-2.5 (4096 wide); another width is LTX-Video 0.9 or another video model
@@ -42,6 +46,8 @@ nonisolated enum LoRABase: Hashable, Sendable {
         case .flux2(let width): width == 4096 ? "FLUX.2 Klein 9B" : width == 3072 ? "FLUX.2 Klein 4B" : "FLUX.2 Klein"
         case .flux3: "FLUX 3 Image Klein"
         case .qwenImage: "Qwen-Image"
+        case .krea2: "Krea 2"
+        case .qwenImage21: "Qwen-Image 2.1"
         case .moss: "MOSS-Image"
         case .ltx(let width): width == nil || width == 4096 ? "LTX-2" : "an older LTX-Video"
         case .flux1: "FLUX.1"
@@ -58,6 +64,9 @@ nonisolated enum LoRABase: Hashable, Sendable {
         case .flux3: model.family == .flux3Klein
         // Qwen-Image's editor has its transformer: a LoRA of one is a LoRA of the other.
         case .qwenImage: model.family == .qwenImage || model.family == .qwenImageEdit
+        case .krea2: model.family == .krea2
+        // 2.1's transformer differs from 1.x's; its Turbo shares the base model's shapes.
+        case .qwenImage21: model.family == .qwenImage21
         case .moss: model.family == .mossImage
         // LTX-2.3's and LTX-2.5's transformers have the same layers: which one a LoRA was made
         // for shows in its results, not its shapes.
@@ -70,7 +79,7 @@ nonisolated enum LoRABase: Hashable, Sendable {
     /// Whether any model the app knows of could run it.
     var isSupported: Bool {
         switch self {
-        case .zImage, .flux2, .flux3, .qwenImage, .moss, .unknown: true
+        case .zImage, .flux2, .flux3, .qwenImage, .moss, .krea2, .qwenImage21, .unknown: true
         case .ltx(let width): width == nil || width == 4096
         case .flux1, .stableDiffusion: false
         }
@@ -176,6 +185,12 @@ nonisolated struct LoRAFileInfo: Hashable, Sendable {
         let note = [metadata["ss_base_model_version"], metadata["modelspec.architecture"], metadata["base_model"]]
             .compactMap { $0?.lowercased() }.joined(separator: " ")
         if note.contains("zimage") || note.contains("z-image") || note.contains("z_image") { return .zImage }
+        if note.contains("krea") { return .krea2 }
+        // 2.1's adapters name the version; plain "qwen" below stays Qwen-Image 1.x.
+        if note.contains("qwen-image-2.1") || note.contains("qwen-image-2-1") || note.contains("qwen-image21")
+            || note.contains("qwen2.1") || note.contains("qwen-2.1") {
+            return .qwenImage21
+        }
         if note.contains("qwen") { return .qwenImage }
         if note.contains("ltx") { return .ltx(width: ltxWidth(downs)) }
         if ["flux3", "flux.3", "flux-3", "flux_3", "flux 3"].contains(where: note.contains) { return .flux3 }

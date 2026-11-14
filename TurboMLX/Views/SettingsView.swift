@@ -67,7 +67,9 @@ private struct ModelsSettings: View {
     var body: some View {
         Form {
             Section {
-                ForEach(app.models) { model in
+                // The mflux families run only on the render Mac: offer them in remote mode,
+                // where the server's download manager fetches them.
+                ForEach(app.models.filter { app.isRemote || $0.family.engine == .turbo }) { model in
                     LabeledContent {
                         HStack(spacing: 8) {
                             if let progress = app.downloads.active[model.id] {

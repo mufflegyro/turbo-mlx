@@ -218,6 +218,22 @@ private struct HistoryThumbnail: View {
                         .padding(5)
                 }
             }
+            .overlay(alignment: .topTrailing) {
+                // Which engine on the render Mac produced it (A9); local items are this Mac's
+                // native engine and carry no tag.
+                if let engine = item.engine {
+                    Text(engine == "mflux" ? "mflux" : "native")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .padding(5)
+                        .help(engine == "mflux"
+                              ? "Rendered by the render Mac's mflux engine"
+                              : "Rendered by the render Mac's native engine")
+                }
+            }
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay {
                 RoundedRectangle(cornerRadius: 6)

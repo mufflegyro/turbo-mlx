@@ -110,7 +110,8 @@ models want more, see the table) and room on the disk for the models you pick.
 ## Models
 
 *Minimum RAM* is the memory your Mac needs for the model; *Download* is the space it takes on
-the disk.
+the disk. Krea 2 and Qwen-Image 2.1 run only on a **render Mac** (TurboRelay): its mflux
+engine serves them, and they appear in the picker only in remote mode.
 
 | Model | Minimum RAM | Download | Good for |
 |---|---|---|---|
@@ -122,6 +123,9 @@ the disk.
 | [MOSS-Image](https://huggingface.co/mlx-community/MOSS-Image-SFT-bf16) | 16 GB | 27.2 GB | long text in English and Chinese, line breaks kept; layouts from JSON prompts with boxes · 5B + Qwen3.5-9B, 8-bit on loading · 50 steps · Apache 2.0 |
 | [Qwen-Image 2512](https://huggingface.co/mflux-community/qwen-image-2512-mflux-q4) | 32 GB | 27.6 GB | rich scenes and long text · 20B, 4-bit · 20 steps · Apache 2.0 |
 | [Qwen-Image Edit 2511](https://huggingface.co/mflux-community/qwen-image-edit-2511-mflux-q4) | 32 GB | 29 GB | changes a picture as the prompt says and keeps the rest · 20B, 4-bit · 20 steps · Apache 2.0 |
+| [Krea 2 Turbo](https://huggingface.co/mflux-community/krea-2-turbo-mflux-q4) | 32 GB | 15.8 GB | photos, illustration and styles · 8 steps, no guidance · **render Mac's mflux engine** · Krea 2 Community License |
+| [Qwen-Image 2.1](https://huggingface.co/mflux-community/qwen-image-2-1-mflux-q4) | 24 GB | 10.6 GB | rich scenes and long text · 7.1B, 4-bit · 40 steps, no guidance by default · **render Mac's mflux engine** · Qwen Research License (non-commercial) |
+| [Qwen-Image 2.1 Turbo](https://huggingface.co/OsaurusAI/Qwen-Image-2.1-Turbo-mflux-4bit) | 24 GB | 10.6 GB | the distilled Qwen-Image 2.1: an image in 8 steps, no guidance · **render Mac's mflux engine** · Qwen Research License (non-commercial) |
 | [SenseNova-U1.5](https://huggingface.co/mlx-community/SenseNova-U1.5-8B-MoT-8step-4bit) | 16 GB | 11.8 GB | photos, posters and infographics with legible text; also edits a picture as the prompt says · 8B + 8B, 4-bit · 8 steps · Apache 2.0 |
 | [LTX-2.3](https://huggingface.co/dgrauet/ltx-2.3-mlx-q4) | 32 GB | 28.5 GB | video with sound, from a prompt or from pictures as the first and last frames · 22B, 4-bit · LTX-2 Community |
 | [LTX-2.3](https://huggingface.co/dgrauet/ltx-2.3-mlx-q8) | 64 GB | 37.8 GB | the 8-bit version, closer to the original |

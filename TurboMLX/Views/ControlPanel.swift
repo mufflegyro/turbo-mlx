@@ -140,10 +140,11 @@ private struct ModelSelection: View {
     }
 
     private func section(_ title: String, including: (ModelDescriptor) -> Bool) -> ModelPopUp.Section {
-        let entries = app.models.filter(including).map { model in
+        let entries = app.models.filter { including($0) && (app.isRemote || $0.family.engine == .turbo) }.map { model in
             ModelPopUp.Entry(
                 id: model.id, name: model.shortName != model.name ? model.shortName : model.name,
                 badge: model.shortName != model.name ? model.memoryLabel : nil,
+                engine: app.isRemote ? (model.family.engine == .mflux ? "mflux" : "native") : nil,
                 icon: ModelIcon.image(takesPicture: model.family.takesReferenceImage, installed: app.isInstalled(model)),
                 installed: app.isInstalled(model)
             )
@@ -161,6 +162,8 @@ private struct ModelPopUp: NSViewRepresentable {
         let id: String
         let name: String
         let badge: String?
+        /// "native" or "mflux" in remote mode: which render engine the model runs on.
+        let engine: String?
         let icon: NSImage
         let installed: Bool
     }
@@ -199,8 +202,9 @@ private struct ModelPopUp: NSViewRepresentable {
                 item.target = context.coordinator
                 item.representedObject = entry.id
                 item.image = entry.icon
-                if entry.badge != nil || !entry.installed {
-                    item.attributedTitle = Self.title(entry.name, badge: entry.badge, font: font, dimmed: !entry.installed)
+                if entry.badge != nil || entry.engine != nil || !entry.installed {
+                    item.attributedTitle = Self.title(entry.name, badge: entry.badge, engine: entry.engine,
+                                                      font: font, dimmed: !entry.installed)
                 }
                 menu.addItem(item)
                 if entry.id == selection { chosen = item }
@@ -215,18 +219,21 @@ private struct ModelPopUp: NSViewRepresentable {
         CGSize(width: proposal.width ?? nsView.intrinsicContentSize.width, height: nsView.intrinsicContentSize.height)
     }
 
-    /// The name, then the badge, lowered from the baseline (where a picture in a text stands) so
-    /// its middle meets the middle of the capitals; both in grey for a model not downloaded.
-    static func title(_ name: String, badge: String?, font: NSFont, dimmed: Bool) -> NSAttributedString {
+    /// The name, then each badge (memory, then the engine in remote mode), lowered from the
+    /// baseline (where a picture in a text stands) so its middle meets the middle of the capitals;
+    /// all in grey for a model not downloaded.
+    static func title(_ name: String, badge: String?, engine: String?, font: NSFont, dimmed: Bool) -> NSAttributedString {
         var attributes: [NSAttributedString.Key: Any] = [.font: font]
         if dimmed { attributes[.foregroundColor] = NSColor.secondaryLabelColor }
-        let text = NSMutableAttributedString(string: name + (badge == nil ? "" : "  "), attributes: attributes)
-        guard let badge else { return text }
-        let image = MemoryBadge.image(badge, dimmed: dimmed)
-        let attachment = NSTextAttachment()
-        attachment.image = image
-        attachment.bounds = CGRect(x: 0, y: ((font.capHeight - image.size.height) / 2).rounded(), width: image.size.width, height: image.size.height)
-        text.append(NSAttributedString(attachment: attachment))
+        let text = NSMutableAttributedString(string: name, attributes: attributes)
+        for badge in [badge, engine].compactMap({ $0 }) {
+            text.append(NSAttributedString(string: "  ", attributes: attributes))
+            let image = MemoryBadge.image(badge, dimmed: dimmed)
+            let attachment = NSTextAttachment()
+            attachment.image = image
+            attachment.bounds = CGRect(x: 0, y: ((font.capHeight - image.size.height) / 2).rounded(), width: image.size.width, height: image.size.height)
+            text.append(NSAttributedString(attachment: attachment))
+        }
         return text
     }
 
@@ -666,7 +673,7 @@ private struct LoRARow: View {
             // A LoRA for a model the app does not run is not worth a copy.
             let info = try LoRAFileInfo.read(url)
             guard info.base.isSupported else {
-                message = "\(name) is a LoRA for \(info.base.displayName), which Turbo MLX doesn’t run: it takes LoRAs for Z\u{2011}Image, FLUX.2 Klein, Qwen\u{2011}Image and LTX\u{2011}2."
+                message = "\(name) is a LoRA for \(info.base.displayName), which Turbo MLX doesn’t run: it takes LoRAs for Z\u{2011}Image, FLUX.2 Klein, Qwen\u{2011}Image, Krea 2 and LTX\u{2011}2."
                 return
             }
             isAdding = true
@@ -2039,6 +2046,8 @@ private struct MemoryRows: View {
             "Frees the text encoder (about 3 GB) once the description is read: at most about 9 GB instead of 12 GB, for 30 seconds of sound. The next sound loads it again, in a second or two."
         case .minimaxMusic3:
             "Frees the language models (about 11 GB, 8 GB in the 4-bit version) once the song is composed, before its sound is made: about 15 GB instead of 19 GB (10 instead of 13 in 4 bits). The next song loads them again."
+        case .krea2, .qwenImage21:
+            "Keeps MLX's buffer cache small and decodes the image in tiles where its VAE allows. These run on the render Mac's mflux engine, which keeps the weights resident."
         }
         return base + " On by default below 64 GB of memory."
     }

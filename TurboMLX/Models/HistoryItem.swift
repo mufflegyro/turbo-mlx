@@ -52,6 +52,9 @@ nonisolated struct HistoryItem: Identifiable, Hashable, Codable, Sendable {
     /// the time estimate fits each backend's history separately, since a faster Mac would
     /// otherwise skew the seconds it promises.
     var backend: String?
+    /// The engine that ran a remote job — "turbo" or "mflux" (A9) — for the history badge;
+    /// nil here, and for items written before engines were reported.
+    var engine: String?
     /// Kept in the private history (the strip's padlock): true when it was generated with the
     /// padlock on, or moved there from its menu. Optional so history written before this reads.
     var isPrivate: Bool?

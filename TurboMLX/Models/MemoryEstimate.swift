@@ -80,6 +80,15 @@ nonisolated enum MemoryEstimate {
         case ("numz/SeedVR2_comfyUI", _): Peak(floor: 10.7, base: 7.0, perMegapixel: 0.66)
         case ("mlx-community/SenseNova-U1.5-8B-MoT-8step-4bit", false): Peak(floor: 10.9, base: 10.7, perMegapixel: 0.3)
         case ("mlx-community/SenseNova-U1.5-8B-MoT-8step-4bit", true): Peak(floor: 7.7, base: 7.5, perMegapixel: 0.2)
+        // Krea 2 Turbo and Qwen-Image 2.1 (14 November 2026): estimates from the Q4 packs' resident
+        // weights (15.8 and 10.6 GB) and the Qwen VAE's decode, not measured yet. The first real
+        // render on the relay Mac refines them, as the figures above were.
+        case ("mflux-community/krea-2-turbo-mflux-q4", false): Peak(floor: 20, base: 17, perMegapixel: 4)
+        case ("mflux-community/krea-2-turbo-mflux-q4", true): Peak(floor: 16.5, base: 15.8, perMegapixel: 2.5)
+        case ("mflux-community/qwen-image-2-1-mflux-q4", false): Peak(floor: 15, base: 12.5, perMegapixel: 3.5)
+        case ("mflux-community/qwen-image-2-1-mflux-q4", true): Peak(floor: 11.5, base: 10.9, perMegapixel: 2)
+        case ("OsaurusAI/Qwen-Image-2.1-Turbo-mflux-4bit", false): Peak(floor: 15, base: 12.5, perMegapixel: 3.5)
+        case ("OsaurusAI/Qwen-Image-2.1-Turbo-mflux-4bit", true): Peak(floor: 11.5, base: 10.9, perMegapixel: 2)
         // Idol (1 November 2026): 8.3–8.9 GB whatever the picture and the detail, the cutout's network setting it;
         // 6.8 GB with Save memory, BiRefNet and DINOv3 let go once used.
         case ("ddalcu/Idol-MLX-Serve-8bit", false): Peak(floor: 9, base: 9, perMegapixel: 0)
