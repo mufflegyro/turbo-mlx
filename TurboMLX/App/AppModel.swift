@@ -193,12 +193,34 @@ final class AppModel {
                 preloadDeclined = false
                 preloadIfUseful()
             }
-            guard selectedModelID != oldValue, let model = selectedModel,
-                  let previous = models.first(where: { $0.id == oldValue }),
-                  previous.family != model.family
-                    || previous.defaultSteps(quality: settings.fullPipeline(for: previous)) != model.defaultSteps(quality: settings.fullPipeline(for: model))
-            else { return }
-            // Steps and guidance mean different things across families: start from the new defaults.
+            guard selectedModelID != oldValue, let model = selectedModel else { return }
+            let previous = models.first(where: { $0.id == oldValue })
+            // Only the draft edits a model's settings; a history item shows a snapshot and must
+            // not overwrite what the model was last run with.
+            if controlsSource == .draft {
+                if let previous {
+                    modelTunings[previous.id] = ModelTuning(steps: settings.steps,
+                                                            guidance: settings.guidance,
+                                                            negativePrompt: settings.negativePrompt)
+                    storeModelTunings()
+                }
+                if let saved = modelTunings[model.id] {
+                    var restored = settings
+                    restored.steps = saved.steps
+                    restored.guidance = saved.guidance
+                    restored.negativePrompt = saved.negativePrompt
+                    settings = restored
+                    return
+                }
+            }
+            let needsDefaults = previous.map { prior in
+                prior.family != model.family
+                    || prior.defaultSteps(quality: settings.fullPipeline(for: prior))
+                        != model.defaultSteps(quality: settings.fullPipeline(for: model))
+            } ?? true
+            guard needsDefaults else { return }
+            // A model without a remembered tuning starts from the family's defaults: steps and
+            // guidance mean different things across families.
             let quality = settings.fullPipeline(for: model)
             settings.steps = model.defaultSteps(quality: quality)
             settings.guidance = model.defaultGuidance(quality: quality)
@@ -228,11 +250,29 @@ final class AppModel {
     /// The settings and model the "+" brings back, as last changed there (saved across launches).
     @ObservationIgnored private var draft: (settings: GenerationSettings, modelID: String)?
 
+    /// The few settings that belong to a model rather than to the draft: steps, guidance and the
+    /// negative prompt. The defaults are not always what a model wants (MOSS-Image at guidance 3,
+    /// then a LoRA, is the example), so picking a model brings back what it was last run with.
+    /// LoRAs already stick per family in the settings themselves.
+    private struct ModelTuning: Codable, Equatable {
+        var steps: Int
+        var guidance: Double
+        var negativePrompt: String
+    }
+
+    @ObservationIgnored private var modelTunings: [String: ModelTuning] = [:]
+
     private func storeDraft() {
         draft = (settings, selectedModelID)
         let defaults = UserDefaults.standard
         if let data = try? JSONEncoder().encode(settings) { defaults.set(data, forKey: Keys.draftSettings) }
         defaults.set(selectedModelID, forKey: Keys.draftModel)
+    }
+
+    private func storeModelTunings() {
+        if let data = try? JSONEncoder().encode(modelTunings) {
+            UserDefaults.standard.set(data, forKey: Keys.modelTunings)
+        }
     }
 
     /// Model path the worker was asked to load ahead of time, so the request is not repeated.
@@ -257,6 +297,7 @@ final class AppModel {
         static let customModels = "customModels"
         static let draftSettings = "draftSettings"
         static let draftModel = "draftModelID"
+        static let modelTunings = "modelTunings"
         static let historyOrder = "historyOrder"
         static let remoteEnabled = "remoteEnabled"
         static let remoteAddress = "remoteAddress"
@@ -327,6 +368,10 @@ final class AppModel {
            let modelID = defaults.string(forKey: Keys.draftModel), catalog.contains(where: { $0.id == modelID }) {
             settings = saved
             selectedModelID = modelID
+        }
+        if let data = defaults.data(forKey: Keys.modelTunings),
+           let saved = try? JSONDecoder().decode([String: ModelTuning].self, from: data) {
+            modelTunings = saved
         }
         draft = (settings, selectedModelID)
 
@@ -653,6 +698,8 @@ final class AppModel {
         guard !model.isBuiltIn else { return }
         cancelDownload(model)
         if case .local(let path) = model.source { FolderAccess.forget(path) }
+        modelTunings[model.id] = nil
+        storeModelTunings()
         models.removeAll { $0.id == model.id }
         saveCustomModels()
         if selectedModelID == model.id { selectedModelID = ModelCatalog.defaultModelID }
@@ -1271,6 +1318,11 @@ final class AppModel {
     /// empty block without a name instead of the subject and the style.
     func resetControls(undoManager: UndoManager? = nil) {
         let model = models.first { $0.id == ModelCatalog.defaultModelID } ?? models.first
+        // Reset means the model's defaults stick, not a tuning from before it.
+        if let model {
+            modelTunings[model.id] = nil
+            storeModelTunings()
+        }
         var initial = Self.initialSettings(for: model)
         initial.blocks = [PromptBlock(name: "")]
         replaceControls(with: initial, modelID: model?.id ?? selectedModelID, viewer: .draft,
