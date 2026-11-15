@@ -192,6 +192,13 @@ final class AppModel {
         }
     }
     let loraLibrary = LoRALibrary()
+    /// The render Mac's LoRA library (GET /loras), shown in the import sheet.
+    var showsRemoteLoRAs = false
+    private(set) var remoteLoRAs: [RemoteBackend.RemoteLoRA] = []
+    private(set) var remoteLoRAsLoading = false
+    private(set) var importingRemoteLoRAs: Set<String> = []
+    private(set) var importedRemoteLoRAs: Set<String> = []
+    var remoteLoRAError: String?
     #if !SEALED
     let updater = AppUpdater()
     #endif
@@ -864,6 +871,50 @@ final class AppModel {
         guard let entry = loraLibrary.entry(choice.file) else { return .missing(choice) }
         if let base = entry.info?.base, base.fits(model) == false { return .mismatch(choice, base) }
         return .ready(choice, entry)
+    }
+
+    // MARK: Remote LoRAs
+
+    /// Loads the render Mac's LoRA library. Opening the sheet or hitting refresh forces a read;
+    /// later calls reuse what is shown.
+    func loadRemoteLoRAs(force: Bool = false) {
+        guard backend is RemoteBackend, !remoteLoRAsLoading else { return }
+        if !force, !remoteLoRAs.isEmpty { return }
+        remoteLoRAsLoading = true
+        remoteLoRAError = nil
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { remoteLoRAsLoading = false }
+            guard let remote = backend as? RemoteBackend else { return }
+            do {
+                let list = try await remote.fetchLoRAs()
+                remoteLoRAs = list.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            } catch {
+                remoteLoRAError = "Couldn’t read the render Mac’s LoRAs: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Downloads one of the render Mac's LoRAs into this Mac's library. An identical file already
+    /// there is reused; different bytes under the same name are kept as a second copy.
+    func importRemoteLoRA(_ lora: RemoteBackend.RemoteLoRA) {
+        guard let remote = backend as? RemoteBackend, !importingRemoteLoRAs.contains(lora.id) else { return }
+        importingRemoteLoRAs.insert(lora.id)
+        remoteLoRAError = nil
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { importingRemoteLoRAs.remove(lora.id) }
+            do {
+                let file = try await remote.downloadLoRA(lora)
+                let folder = file.deletingLastPathComponent()
+                defer { try? FileManager.default.removeItem(at: folder) }
+                _ = try await loraLibrary.add(file)
+                loraLibrary.refresh()
+                importedRemoteLoRAs.insert(lora.id)
+            } catch {
+                remoteLoRAError = "Couldn’t import \(lora.name): \(error.localizedDescription)"
+            }
+        }
     }
 
     /// A generation this Mac cannot hold: the engine would run out of memory and die with it, so

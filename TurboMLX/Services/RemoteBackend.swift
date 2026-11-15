@@ -293,6 +293,60 @@ final class RemoteBackend: EngineTransport {
         onModelStatesChange?()
     }
 
+    /// A LoRA the render Mac has kept from a client's job, for another client to import.
+    struct RemoteLoRA: Identifiable, Hashable, Sendable {
+        let id: String
+        let name: String
+        let bytes: Int64
+        let family: String?
+        let addedAt: Date?
+    }
+
+    /// The LoRAs the render Mac has kept from clients' jobs.
+    func fetchLoRAs() async throws -> [RemoteLoRA] {
+        let (data, response) = try await session.data(for: url("loras"))
+        try Self.checkHTTP(response)
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let list = object["loras"] as? [[String: Any]] else {
+            throw RelayClientError.badResponse
+        }
+        return list.compactMap { entry in
+            guard let id = entry["id"] as? String,
+                  let name = entry["name"] as? String else { return nil }
+            return RemoteLoRA(
+                id: id,
+                name: name,
+                bytes: (entry["bytes"] as? NSNumber)?.int64Value ?? 0,
+                family: entry["family"] as? String,
+                addedAt: (entry["added_at"] as? NSNumber).map {
+                    Date(timeIntervalSince1970: $0.doubleValue)
+                }
+            )
+        }
+    }
+
+    /// Streams a library LoRA to a temporary file named as it arrived, for `LoRALibrary.add`.
+    /// `URLSession.download` writes to disk, so a multi-gigabyte adapter never sits in memory.
+    func downloadLoRA(_ lora: RemoteLoRA) async throws -> URL {
+        let (temporary, response) = try await session.download(for: url("loras/\(lora.id)"))
+        try Self.checkHTTP(response)
+        let folder = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TurboMLX-LoRA-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let destination = folder.appendingPathComponent(Self.safeLoRAFileName(lora.name, fallback: lora.id))
+        try FileManager.default.moveItem(at: temporary, to: destination)
+        return destination
+    }
+
+    private static func safeLoRAFileName(_ raw: String, fallback: String) -> String {
+        var name = (raw as NSString).lastPathComponent
+        name = name.components(separatedBy: CharacterSet.controlCharacters).joined()
+        if name.isEmpty || name == "." || name == ".." { name = fallback }
+        if name.hasPrefix(".") { name = "LoRA-" + String(name.dropFirst()) }
+        let stem = (name as NSString).deletingPathExtension
+        return String(stem.prefix(160)) + ".safetensors"
+    }
+
     func cancelModelDownload(id: String) {
         let encoded = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? id
         Task { [weak self] in

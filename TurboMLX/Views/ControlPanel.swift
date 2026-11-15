@@ -63,6 +63,10 @@ struct ControlPanel: View {
             }
         }
         .onAppear { focusedBlock = app.settings.blocks.first?.id }
+        .sheet(isPresented: $app.showsRemoteLoRAs) {
+            RemoteLoRAsView()
+                .environment(app)
+        }
     }
 }
 
@@ -725,6 +729,9 @@ private struct LoRAMenu: View {
             }
             Divider()
             Button("Add LoRA File…", action: add)
+            if app.isRemote {
+                Button("Import from the Render Mac…") { app.showsRemoteLoRAs = true }
+            }
             Button("Show LoRAs in Finder") {
                 try? FileManager.default.createDirectory(at: LoRALibrary.directory, withIntermediateDirectories: true)
                 if let entry = current.flatMap({ app.loraLibrary.entry($0.file) }) {
