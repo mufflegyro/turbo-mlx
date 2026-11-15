@@ -19,10 +19,18 @@ struct HistoryStrip: View {
     private let rowPadding: CGFloat = 10
     /// The thumbnails' height: dragged from the header, and kept across launches.
     @AppStorage("historyThumbnailHeight") private var thumbnailHeightValue: Double = 92
-    @State private var dragStartHeight: CGFloat?
+    /// The drag in progress. A transient gesture value (as the prompt blocks use) keeps the
+    /// resize out of the defaults until it is let go, which avoids re-laying out twice per event.
+    @GestureState private var stretch: CGFloat = 0
 
     private var thumbnailHeight: CGFloat {
-        CGFloat(min(max(thumbnailHeightValue, 64), 200))
+        thumbnailHeight(stretchedBy: stretch)
+    }
+
+    private func thumbnailHeight(stretchedBy amount: CGFloat) -> CGFloat {
+        let stored = CGFloat(min(max(thumbnailHeightValue, 64), 200))
+        // Dragging up (a negative translation) makes the thumbnails taller.
+        return min(max(stored - amount, 64), 200)
     }
 
     var body: some View {
@@ -91,19 +99,24 @@ struct HistoryStrip: View {
             .padding(.top, 8)
             .contentShape(Rectangle())
             // The bar itself folds and resizes: double-click it, or drag it up for taller
-            // thumbnails (down for shorter ones).
+            // thumbnails (down for shorter ones). The resize cursor, as the prompt block's
+            // bottom edge uses.
+            .pointerStyle(isCollapsed ? PointerStyle.default : .frameResize(position: .top))
             .onTapGesture(count: 2) {
                 withAnimation(.snappy) { isCollapsed.toggle() }
             }
             .gesture(
-                DragGesture(minimumDistance: 4)
-                    .onChanged { value in
+                // Global coordinates: the bar moves up as the strip grows, so a local drag
+                // would chase itself and make the thumbnails jump.
+                DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                    .updating($stretch) { value, state, _ in
                         guard !isCollapsed else { return }
-                        if dragStartHeight == nil { dragStartHeight = thumbnailHeight }
-                        let proposed = (dragStartHeight ?? thumbnailHeight) - value.translation.height
-                        thumbnailHeightValue = Double(min(max(proposed, 64), 200))
+                        state = value.translation.height
                     }
-                    .onEnded { _ in dragStartHeight = nil }
+                    .onEnded { value in
+                        guard !isCollapsed else { return }
+                        thumbnailHeightValue = Double(thumbnailHeight(stretchedBy: value.translation.height))
+                    }
             )
             .help("Double-click to fold or unfold the history; drag up or down to resize the thumbnails")
 
