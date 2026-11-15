@@ -163,8 +163,31 @@ final class AppModel {
             generateAfterDownload = nil
             changed = true
         }
+        // The Quality mode's files have their own state on the render Mac; the same finish and
+        // failure paths as a local Quality download apply.
+        var qualityReady: String?
+        for (id, state) in remote.qualityStates {
+            switch state.state {
+            case "downloaded" where generateAfterQuality == id:
+                generateAfterQuality = nil
+                qualityReady = id
+            case "failed":
+                if reportedQualityFailures.insert(id).inserted, let message = state.message {
+                    alert = AppAlert(title: "Couldn’t download the Quality files",
+                                     message: message, offersLog: true)
+                }
+            case "downloading":
+                reportedQualityFailures.remove(id)
+            default:
+                break
+            }
+        }
         queueChanged()
-        if changed, let model = selectedModel, !settings.trimmedPrompt.isEmpty || !model.family.takesPrompt {
+        if let id = qualityReady, selectedModelID == id,
+           let model = selectedModel, !settings.trimmedPrompt.isEmpty || !model.family.takesPrompt {
+            if !NSApp.isActive { NSApp.requestUserAttention(.informationalRequest) }
+            generate()
+        } else if changed, let model = selectedModel, !settings.trimmedPrompt.isEmpty || !model.family.takesPrompt {
             generate()
         }
     }
@@ -185,6 +208,9 @@ final class AppModel {
     private(set) var qualityInstalled: Set<String> = []
     /// Model to generate with once its Quality files are downloaded.
     @ObservationIgnored private var generateAfterQuality: String?
+    /// Remote Quality downloads already reported, so one failure does not alert on every
+    /// state refresh (cleared when a download starts again).
+    @ObservationIgnored private var reportedQualityFailures: Set<String> = []
     let locator = ModelLocator()
     /// The hub cache the models are kept in (Settings → Models), as `ModelFolder` has it.
     private(set) var modelsFolder = ModelFolder.hubCache
@@ -467,7 +493,23 @@ final class AppModel {
         })
     }
 
-    func hasQualityFiles(_ model: ModelDescriptor) -> Bool { qualityInstalled.contains(model.id) }
+    func hasQualityFiles(_ model: ModelDescriptor) -> Bool {
+        if let remote = backend as? RemoteBackend {
+            _ = remote.statesRevision // tracked: the Quality row repaints when the state lands
+            return remote.qualityStates[model.id]?.state == "downloaded"
+        }
+        return qualityInstalled.contains(model.id)
+    }
+
+    /// The Quality files' download, locally or on the render Mac; nil when none is running.
+    func qualityProgress(_ model: ModelDescriptor) -> DownloadCenter.Progress? {
+        if let remote = backend as? RemoteBackend {
+            _ = remote.statesRevision
+            guard let state = remote.qualityStates[model.id], state.state == "downloading" else { return nil }
+            return DownloadCenter.Progress(bytes: state.bytes, total: state.total)
+        }
+        return downloads.qualityProgress(model)
+    }
 
     /// Remote mode: the server's catalog decides what is installed (M3). Each downloaded
     /// model gets a stable alias path (`RemoteBackend.pseudoPath`) that commands carry and
@@ -575,12 +617,14 @@ final class AppModel {
     func downloadQuality(generating: Bool = true) {
         guard let model = selectedModel else { return }
         generateAfterQuality = generating && !settings.trimmedPrompt.isEmpty ? model.id : nil
-        if isRemote {
-            // The server downloads the repository's files as configured; the Quality mode's
-            // extra files arrive with its own catalog entry (M4 keeps remote simple).
+        if let remote = backend as? RemoteBackend {
+            // The render Mac downloads the Quality mode's files on top of the model it already
+            // has (`POST /models/{id}/download/quality`), and its progress arrives as
+            // `quality`-tagged model_download events.
             do {
-                try (backend as? RemoteBackend)?.downloadModel(model)
+                try remote.downloadQuality(model)
             } catch {
+                generateAfterQuality = nil
                 alert = AppAlert(title: "Couldn't reach the render Mac", message: error.localizedDescription, offersLog: true)
             }
             return
@@ -590,6 +634,11 @@ final class AppModel {
 
     func cancelQualityDownload(_ model: ModelDescriptor) {
         if generateAfterQuality == model.id { generateAfterQuality = nil }
+        if let remote = backend as? RemoteBackend {
+            // One download runs at a time on the render Mac; its cancel route applies.
+            remote.cancelModelDownload(id: model.id)
+            return
+        }
         downloads.cancelQuality(model)
         refreshInstalled()
     }
@@ -775,7 +824,7 @@ final class AppModel {
         if downloads.isDownloading(model) { return .modelDownloading }
         if !isInstalled(model) { return .modelNotDownloaded }
         if settings.fullPipeline(for: model), !hasQualityFiles(model) {
-            return downloads.qualityProgress(model) != nil ? .qualityDownloading : .qualityNotDownloaded
+            return qualityProgress(model) != nil ? .qualityDownloading : .qualityNotDownloaded
         }
         if model.family.requiresReferenceImage, !hasReferenceImage { return .missingReference }
         if model.family.takesPrompt, settings.trimmedPrompt.isEmpty { return .emptyPrompt }

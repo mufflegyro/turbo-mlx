@@ -49,6 +49,9 @@ final class RemoteBackend: EngineTransport {
         var message: String?
     }
     @ObservationIgnored private(set) var modelStates: [String: ModelState] = [:]
+    /// The Quality mode's files (LTX-2's dev transformer), tracked beside the model's own
+    /// state: `quality_state` in /models, and `model_download` events tagged `quality`.
+    @ObservationIgnored private(set) var qualityStates: [String: ModelState] = [:]
     /// Tracked bump: rows read this (through `AppModel.remoteModelState`) so a download's
     /// progress or failure repaints the picker — `modelStates` itself is untracked because
     /// it is mutated on background queues.
@@ -198,6 +201,16 @@ final class RemoteBackend: EngineTransport {
                 total: (entry["bytes_total"] as? NSNumber)?.int64Value ?? 0,
                 message: entry["error"] as? String
             )
+            if let quality = entry["quality_state"] as? String {
+                let live = qualityStates[id]?.state
+                // The same rule as the model's state: a live progress or a readable failure
+                // outranks the polled snapshot, which would otherwise flash past.
+                let keepLive = live == "downloading" && quality != "downloaded" && quality != "failed"
+                let keepFailure = live == "failed" && quality == "not-downloaded"
+                if !keepLive && !keepFailure {
+                    qualityStates[id] = ModelState(state: quality, bytes: 0, total: 0, message: nil)
+                }
+            }
             changed = true
         }
         if changed { bumpStatesRevision() }
@@ -235,6 +248,49 @@ final class RemoteBackend: EngineTransport {
                 self.failDownload(id: model.id, message: error.localizedDescription)
             }
         }
+    }
+
+    func downloadQuality(_ model: ModelDescriptor) throws {
+        guard webSocket != nil else { throw BackendController.BackendError.notRunning }
+        let encoded = model.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? model.id
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                var request = self.url("models/\(encoded)/download/quality")
+                request.httpMethod = "POST"
+                let (data, response) = try await self.session.data(for: request)
+                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                    let message = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["error"] as? String
+                        ?? "the server refused the download"
+                    self.failDownload(id: model.id, message: message, quality: true)
+                } else {
+                    // Accepted: show the download at once, before the listing's first event, but
+                    // never undo a state that already arrived (or the files already there). An
+                    // `already` answer means there is nothing left to fetch and no event will come.
+                    let responseObject = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                    self.noteQualityAccepted(id: model.id,
+                                             already: (responseObject?["already"] as? Bool) == true)
+                }
+            } catch {
+                self.failDownload(id: model.id, message: error.localizedDescription, quality: true)
+            }
+        }
+    }
+
+    /// The server accepted a Quality download: reflect it before its first event.
+    private func noteQualityAccepted(id: String, already: Bool) {
+        lock.lock()
+        if already {
+            qualityStates[id] = ModelState(state: "downloaded", bytes: 0, total: 0, message: nil)
+        } else {
+            let current = qualityStates[id]?.state
+            if current == nil || current == "not-downloaded" {
+                qualityStates[id] = ModelState(state: "downloading", bytes: 0, total: 0, message: nil)
+            }
+        }
+        lock.unlock()
+        bumpStatesRevision()
+        onModelStatesChange?()
     }
 
     func cancelModelDownload(id: String) {
@@ -366,6 +422,7 @@ final class RemoteBackend: EngineTransport {
 
     private func handleModelDownload(_ object: [String: Any]) {
         guard let id = object["model_id"] as? String else { return }
+        let isQuality = object["quality"] as? Bool == true
         let state = ModelState(
             state: object["status"] as? String ?? "",
             bytes: (object["bytes"] as? NSNumber)?.int64Value ?? 0,
@@ -374,10 +431,14 @@ final class RemoteBackend: EngineTransport {
         )
         if state.state == "failed", let message = state.message {
             // Durable: the picker row can be refreshed away, the log keeps the reason.
-            log.append("[relay] download of \(id) failed: \(message)")
+            log.append("[relay] \(isQuality ? "Quality " : "")download of \(id) failed: \(message)")
         }
         lock.lock()
-        modelStates[id] = state
+        if isQuality {
+            qualityStates[id] = state
+        } else {
+            modelStates[id] = state
+        }
         lock.unlock()
         bumpStatesRevision()
         onModelStatesChange?()
@@ -583,10 +644,15 @@ final class RemoteBackend: EngineTransport {
         reemit(["event": "failed", "id": jobID, "message": message])
     }
 
-    private func failDownload(id: String, message: String) {
-        log.append("[relay] download of \(id) failed: \(message)")
+    private func failDownload(id: String, message: String, quality: Bool = false) {
+        log.append("[relay] \(quality ? "Quality " : "")download of \(id) failed: \(message)")
         lock.lock()
-        modelStates[id] = ModelState(state: "failed", bytes: 0, total: 0, message: message)
+        let state = ModelState(state: "failed", bytes: 0, total: 0, message: message)
+        if quality {
+            qualityStates[id] = state
+        } else {
+            modelStates[id] = state
+        }
         lock.unlock()
         bumpStatesRevision()
         onModelStatesChange?()

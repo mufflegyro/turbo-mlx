@@ -1537,10 +1537,15 @@ private struct QualityFilesRow: View {
     let model: ModelDescriptor
 
     var body: some View {
-        if let progress = app.downloads.qualityProgress(model) {
+        if let progress = app.qualityProgress(model) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    ProgressView(value: progress.fraction ?? 0)
+                    if let fraction = progress.fraction {
+                        ProgressView(value: fraction)
+                    } else {
+                        // A state seeded from /models has no byte counts yet: keep it moving.
+                        ProgressView()
+                    }
                     Button {
                         app.cancelQualityDownload(model)
                     } label: {
@@ -1550,7 +1555,9 @@ private struct QualityFilesRow: View {
                     .foregroundStyle(.secondary)
                     .help("Cancel the download (you can resume it later)")
                 }
-                Text("Downloading the full model: \(Format.bytes(progress.bytes)) of \(Format.bytes(progress.total))")
+                Text(progress.total > 0
+                     ? "Downloading the full model: \(Format.bytes(progress.bytes)) of \(Format.bytes(progress.total))"
+                     : "Downloading the full model…")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
@@ -2172,7 +2179,7 @@ private struct GenerateBar: View {
             wideButton(app.settings.trimmedPrompt.isEmpty ? "Download for Quality\(size)" : "Download and Generate\(size)",
                        systemImage: "arrow.down.circle") { app.downloadQuality() }
         case .qualityDownloading:
-            let percent = model.flatMap { app.downloads.qualityProgress($0)?.fraction }.map { " · \(Int($0 * 100))%" } ?? ""
+            let percent = model.flatMap { app.qualityProgress($0)?.fraction }.map { " · \(Int($0 * 100))%" } ?? ""
             wideButton("Downloading\(percent)", systemImage: "arrow.down.circle") {}
                 .disabled(true)
         case .noModel, .missingReference, .emptyPrompt, .emptyLyrics, .upscaleTooLarge, .notEnoughMemory, .loraMissing, .loraMismatch:
