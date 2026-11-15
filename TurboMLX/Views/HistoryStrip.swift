@@ -15,8 +15,15 @@ struct HistoryStrip: View {
     /// under the row, which then centers them in less than their height and padding, a little higher.
     @State private var rowOffset: CGFloat = 0
 
-    private let thumbnailHeight: CGFloat = 92
+    private let headerHeight: CGFloat = 38
     private let rowPadding: CGFloat = 10
+    /// The thumbnails' height: dragged from the header, and kept across launches.
+    @AppStorage("historyThumbnailHeight") private var thumbnailHeightValue: Double = 92
+    @State private var dragStartHeight: CGFloat?
+
+    private var thumbnailHeight: CGFloat {
+        CGFloat(min(max(thumbnailHeightValue, 64), 200))
+    }
 
     var body: some View {
         @Bindable var app = app
@@ -82,68 +89,89 @@ struct HistoryStrip: View {
             }
             .padding(.horizontal, 14)
             .padding(.top, 8)
+            .contentShape(Rectangle())
+            // The bar itself folds and resizes: double-click it, or drag it up for taller
+            // thumbnails (down for shorter ones).
+            .onTapGesture(count: 2) {
+                withAnimation(.snappy) { isCollapsed.toggle() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 4)
+                    .onChanged { value in
+                        guard !isCollapsed else { return }
+                        if dragStartHeight == nil { dragStartHeight = thumbnailHeight }
+                        let proposed = (dragStartHeight ?? thumbnailHeight) - value.translation.height
+                        thumbnailHeightValue = Double(min(max(proposed, 64), 200))
+                    }
+                    .onEnded { _ in dragStartHeight = nil }
+            )
+            .help("Double-click to fold or unfold the history; drag up or down to resize the thumbnails")
 
-            if !isCollapsed {
-                let isEmpty = app.visibleHistory.isEmpty && app.pendingJobs.isEmpty
-                // The "+" outside the scroll view, so it is always there: back to the next generation
-                // from anywhere in the history in one click, the strip staying where it was scrolled.
-                HStack(alignment: .top, spacing: 8) {
-                    ScrollViewReader { proxy in
-                        ScrollView(.horizontal) {
-                            LazyHStack(spacing: 8) {
-                                ForEach(app.arrangedHistory) { item in
-                                    HistoryThumbnail(item: item, height: thumbnailHeight, isSelected: app.isSelected(item))
-                                        .id(item.id)
-                                }
-                                // The running job next to the images it will join, then the queue.
-                                ForEach(app.pendingJobs) { job in
-                                    JobThumbnail(job: job, height: thumbnailHeight, isSelected: app.isSelected(job))
-                                        .id(job.id)
-                                }
-                                if isEmpty {
-                                    Text(app.showsPrivateHistory
-                                         ? "Nothing private yet: turn the padlock on and generate, or move an image here from its menu."
-                                         : "Generated images will appear here.")
-                                        .font(.callout)
-                                        .foregroundStyle(.tertiary)
-                                        .frame(height: thumbnailHeight)
-                                }
+            let isEmpty = app.visibleHistory.isEmpty && app.pendingJobs.isEmpty
+            // The "+" outside the scroll view, so it is always there: back to the next generation
+            // from anywhere in the history in one click, the strip staying where it was scrolled.
+            HStack(alignment: .top, spacing: 8) {
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal) {
+                        LazyHStack(spacing: 8) {
+                            ForEach(app.arrangedHistory) { item in
+                                HistoryThumbnail(item: item, height: thumbnailHeight, isSelected: app.isSelected(item))
+                                    .id(item.id)
                             }
-                            .padding(.leading, 14)
-                            .padding(.trailing, isEmpty ? 14 : 0)
-                            .padding(.vertical, rowPadding)
-                            // Only the vertical, which scrolling leaves alone.
-                            .onGeometryChange(for: CGFloat.self) { proxy in
-                                let row = proxy.frame(in: .named("HistoryStrip"))
-                                return row.minY + (row.height - thumbnailHeight) / 2 - rowPadding
-                            } action: {
-                                rowOffset = $0
+                            // The running job next to the images it will join, then the queue.
+                            ForEach(app.pendingJobs) { job in
+                                JobThumbnail(job: job, height: thumbnailHeight, isSelected: app.isSelected(job))
+                                    .id(job.id)
+                            }
+                            if isEmpty {
+                                Text(app.showsPrivateHistory
+                                     ? "Nothing private yet: turn the padlock on and generate, or move an image here from its menu."
+                                     : "Generated images will appear here.")
+                                    .font(.callout)
+                                    .foregroundStyle(.tertiary)
+                                    .frame(height: thumbnailHeight)
                             }
                         }
-                        .scrollIndicators(.automatic)
-                        .scrollPosition($position)
-                        .onChange(of: app.displayedItem?.id ?? app.displayedJob?.id) { _, id in
-                            guard let id else { return }
-                            withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
-                        }
-                        // A new job: back to the end, where it is. Not after a deletion, which leaves the
-                        // strip where it was.
-                        .onChange(of: app.history.items.count + app.pendingJobs.count) { old, new in
-                            guard new > old else { return }
-                            withAnimation(.snappy) { position.scrollTo(edge: .trailing) }
+                        .padding(.leading, 14)
+                        .padding(.trailing, isEmpty ? 14 : 0)
+                        .padding(.vertical, rowPadding)
+                        // Only the vertical, which scrolling leaves alone.
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            let row = proxy.frame(in: .named("HistoryStrip"))
+                            return row.minY + (row.height - thumbnailHeight) / 2 - rowPadding
+                        } action: {
+                            rowOffset = $0
                         }
                     }
-                    if !isEmpty {
-                        NewTile(height: thumbnailHeight)
-                            .padding(.trailing, 14)
-                            .padding(.vertical, rowPadding)
-                            .offset(y: rowOffset)
+                    .scrollIndicators(.automatic)
+                    .scrollPosition($position)
+                    .onChange(of: app.displayedItem?.id ?? app.displayedJob?.id) { _, id in
+                        guard let id else { return }
+                        withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
+                    }
+                    // A new job: back to the end, where it is. Not after a deletion, which leaves the
+                    // strip where it was.
+                    .onChange(of: app.history.items.count + app.pendingJobs.count) { old, new in
+                        guard new > old else { return }
+                        withAnimation(.snappy) { position.scrollTo(edge: .trailing) }
                     }
                 }
-                .coordinateSpace(.named("HistoryStrip"))
+                if !isEmpty {
+                    NewTile(height: thumbnailHeight)
+                        .padding(.trailing, 14)
+                        .padding(.vertical, rowPadding)
+                        .offset(y: rowOffset)
+                }
             }
+            .coordinateSpace(.named("HistoryStrip"))
+            // Folded, the row slides down out of the header's frame rather than fading: the
+            // header stays, the stage takes the height back, and nothing is removed.
+            .offset(y: isCollapsed ? thumbnailHeight + rowPadding * 2 : 0)
+            .allowsHitTesting(!isCollapsed)
+            .accessibilityHidden(isCollapsed)
         }
-        .frame(height: isCollapsed ? 38 : thumbnailHeight + 48, alignment: .top)
+        .frame(height: isCollapsed ? headerHeight : thumbnailHeight + 48, alignment: .top)
+        .clipped()
         .animation(.snappy, value: isCollapsed)
         .background(.background)
         .confirmationDialog(
