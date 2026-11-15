@@ -1462,6 +1462,11 @@ private struct ClipSection: View {
 
     private var picksDuration: Bool { model.family.picksDuration }
 
+    /// 1–20 s for LTX at 24/25 fps; 1–10 s otherwise.
+    private var durations: ClosedRange<Double> {
+        GenerationSettings.videoDurations(family: model.family, frameRate: settings.videoFrameRate)
+    }
+
     /// Fast or Quality, each mode with its own steps and guidance.
     private var mode: Binding<Bool> {
         Binding {
@@ -1504,7 +1509,7 @@ private struct ClipSection: View {
             }
             LabeledContent {
                 HStack(spacing: 6) {
-                    Slider(value: $settings.videoSeconds, in: GenerationSettings.videoDurations, step: 1)
+                    Slider(value: $settings.videoSeconds, in: durations, step: 1)
                     Text(verbatim: "\(Int(settings.videoSeconds)) s")
                         .monospacedDigit()
                         .frame(width: 34, alignment: .trailing)
@@ -1513,9 +1518,18 @@ private struct ClipSection: View {
                 Text(automatic ? "Longest" : "Duration")
                     .help(automatic
                         ? "At most \(settings.videoFrames) frames. Longer clips take longer and need more memory."
-                        : "\(settings.videoFrames) frames. Longer clips take longer and need more memory.")
+                        : "\(settings.videoFrames) frames, up to \(Int(durations.upperBound)) s at \(settings.videoFrameRate) fps. Longer clips take longer and need more memory.")
             }
-            Picker("Frame rate", selection: $settings.videoFrameRate) {
+            Picker("Frame rate", selection: Binding(
+                get: { settings.videoFrameRate },
+                set: { rate in
+                    settings.videoFrameRate = rate
+                    // 20 s is a 24/25 fps LTX option: dropping to 30 fps brings the clip back
+                    // within the range the model supports there.
+                    let range = GenerationSettings.videoDurations(family: model.family, frameRate: rate)
+                    settings.videoSeconds = min(max(settings.videoSeconds, range.lowerBound), range.upperBound)
+                }
+            )) {
                 ForEach(GenerationSettings.videoFrameRates, id: \.self) { rate in
                     Text(verbatim: "\(rate) fps").tag(rate)
                 }
@@ -1611,13 +1625,16 @@ private struct FormatSection: View {
             }
             Picker("Resolution", selection: video ? $settings.videoResolution : $settings.resolution) {
                 ForEach(video ? GenerationSettings.videoResolutions : GenerationSettings.resolutions, id: \.self) { resolution in
-                    Text(verbatim: "\(resolution)").tag(resolution)
+                    Text(verbatim: video ? GenerationSettings.videoResolutionName(resolution) : "\(resolution)")
+                        .tag(resolution)
                 }
             }
             .pickerStyle(.segmented)
             .disabled(settings.usesCustomSize)
             .help(settings.usesCustomSize
                 ? "Custom size is on, under Advanced."
+                : video
+                ? "512 / 640 / 768: the side of a square image of the same area. 720p / 1080p: the long side, 1280 or 1920 — 16:9 gives 1280 × 704 and 1920 × 1088."
                 : "The side of a square image of the same area, in pixels.")
         }
     }

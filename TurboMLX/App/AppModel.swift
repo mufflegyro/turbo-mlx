@@ -1387,8 +1387,9 @@ final class AppModel {
         if isVideo, let frames = request.frames, let fps = request.fps, fps > 0 {
             updated.videoFrameRate = fps
             updated.videoAutoDuration = request.autoDuration ?? false
-            updated.videoSeconds = min(max((Double(frames - 1) / Double(fps)).rounded(), GenerationSettings.videoDurations.lowerBound),
-                                       GenerationSettings.videoDurations.upperBound)
+            let durations = GenerationSettings.videoDurations(family: model?.family, frameRate: fps)
+            updated.videoSeconds = min(max((Double(frames - 1) / Double(fps)).rounded(), durations.lowerBound),
+                                       durations.upperBound)
         }
         // A model that takes a reference image gets the generation's, or none; the others leave it.
         if model?.family.takesReferenceImage == true {

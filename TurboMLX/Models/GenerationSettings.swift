@@ -52,6 +52,18 @@ nonisolated enum AspectRatio: String, CaseIterable, Codable, Identifiable, Senda
             height: PixelSize.snapped((area / ratio).squareRoot(), multiple: multiple)
         )
     }
+
+    /// Sides whose longer one is `longSide`, keeping the ratio (16:9 at 1280: 1280 × 704 after the
+    /// rounding to the family's multiple). The 720p and 1080p presets use this rather than an area.
+    func size(longSide: Int, multiple: Int = 16) -> PixelSize {
+        let longer = Double(longSide)
+        let width = ratio >= 1 ? longer : longer * ratio
+        let height = ratio >= 1 ? longer / ratio : longer
+        return PixelSize(
+            width: PixelSize.snapped(width, multiple: multiple),
+            height: PixelSize.snapped(height, multiple: multiple)
+        )
+    }
 }
 
 /// One piece of the prompt. The blocks are joined, in order, into the text sent to the model, so
@@ -99,9 +111,26 @@ nonisolated struct PromptBlock: Codable, Hashable, Identifiable, Sendable {
 
 nonisolated struct GenerationSettings: Codable, Equatable, Sendable {
     static let resolutions = [512, 768, 1024, 1536, 2048]
-    /// Video: 640 gives 768 × 512 at 3:2 and 768 gives 1024 × 576 at 16:9, the sizes LTX-2 is at ease with.
-    static let videoResolutions = [512, 640, 768]
+    /// Video: 640 gives 768 × 512 at 3:2 and 768 gives 1024 × 576 at 16:9, the sizes LTX-2 is at ease
+    /// with; 720p and 1080p are the long side (1280 and 1920), so 16:9 gives 1280 × 704 and 1920 × 1088.
+    static let videoResolutions = [512, 640, 768, 1280, 1920]
+    /// The video presets measured by their long side rather than by the area `base:` keeps.
+    static let videoHDPresets: Set<Int> = [1280, 1920]
     static let videoDurations = 1.0...10.0
+    /// LTX-2.3 takes 20 s at 24/25 fps (the model's long configurations); 30 fps and the other
+    /// video families stop at 10 s.
+    static func videoDurations(family: ModelFamily?, frameRate: Int) -> ClosedRange<Double> {
+        family?.isLTX == true && frameRate <= 25 ? 1.0...20.0 : Self.videoDurations
+    }
+
+    /// "512", or "720p" / "1080p" for the long-side presets.
+    static func videoResolutionName(_ resolution: Int) -> String {
+        switch resolution {
+        case 1280: "720p"
+        case 1920: "1080p"
+        default: "\(resolution)"
+        }
+    }
     static let videoFrameRates = [24, 25, 30]
     static let guidanceRange = 1.0...7.0
     static let maxBatch = 8
@@ -171,9 +200,14 @@ nonisolated struct GenerationSettings: Codable, Equatable, Sendable {
 
     /// A clip's size: sides multiples of 64.
     var videoSize: PixelSize {
-        usesCustomSize
-            ? PixelSize(width: PixelSize.snapped(Double(customWidth), multiple: 64), height: PixelSize.snapped(Double(customHeight), multiple: 64))
-            : aspect.size(base: videoResolution, multiple: 64)
+        if usesCustomSize {
+            return PixelSize(width: PixelSize.snapped(Double(customWidth), multiple: 64),
+                             height: PixelSize.snapped(Double(customHeight), multiple: 64))
+        }
+        if Self.videoHDPresets.contains(videoResolution) {
+            return aspect.size(longSide: videoResolution, multiple: 64)
+        }
+        return aspect.size(base: videoResolution, multiple: 64)
     }
 
     func size(for family: ModelFamily) -> PixelSize {
@@ -306,12 +340,16 @@ nonisolated struct GenerationSettings: Codable, Equatable, Sendable {
     /// Picks the preset that produced `size`, or switches to a custom size.
     mutating func apply(size: PixelSize, video: Bool = false, multiple: Int = 16) {
         for aspect in AspectRatio.allCases {
-            for resolution in video ? Self.videoResolutions : Self.resolutions
-            where aspect.size(base: resolution, multiple: video ? 64 : multiple) == size {
-                self.aspect = aspect
-                if video { videoResolution = resolution } else { self.resolution = resolution }
-                usesCustomSize = false
-                return
+            for resolution in video ? Self.videoResolutions : Self.resolutions {
+                let preset = video && Self.videoHDPresets.contains(resolution)
+                    ? aspect.size(longSide: resolution, multiple: 64)
+                    : aspect.size(base: resolution, multiple: video ? 64 : multiple)
+                if preset == size {
+                    self.aspect = aspect
+                    if video { videoResolution = resolution } else { self.resolution = resolution }
+                    usesCustomSize = false
+                    return
+                }
             }
         }
         usesCustomSize = true
