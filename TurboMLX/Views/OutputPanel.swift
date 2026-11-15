@@ -11,6 +11,9 @@ struct OutputPanel: View {
     @State private var clip = ClipPlayer()
     @State private var song = SongPlayer()
     @FocusState private var isFocused: Bool
+    /// The history strip folds down to its header, like the model settings sidebar: the stage
+    /// takes the room back, and the choice survives a relaunch.
+    @AppStorage("historyCollapsed") private var historyCollapsed = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,7 +24,7 @@ struct OutputPanel: View {
                 ItemInfoBar(item: item)
             }
             Divider()
-            HistoryStrip()
+            HistoryStrip(isCollapsed: $historyCollapsed)
         }
         .background(stageBackground)
         // No band behind the toolbar: without a scroll view under it (a clip, the draft, a running
@@ -100,6 +103,15 @@ struct OutputPanel: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .status) {
             BackendStatusButton()
+        }
+        ToolbarItem(placement: .automatic) {
+            Button {
+                withAnimation(.snappy) { historyCollapsed.toggle() }
+            } label: {
+                Image(systemName: "rectangle.bottomthird.inset.filled")
+            }
+            .help(historyCollapsed ? "Show the history thumbnails" : "Hide the history thumbnails")
+            .accessibilityLabel(historyCollapsed ? "Show History" : "Hide History")
         }
         ToolbarItemGroup(placement: .primaryAction) {
             let item = app.displayedItem

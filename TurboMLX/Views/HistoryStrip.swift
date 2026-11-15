@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 /// on the left.
 struct HistoryStrip: View {
     @Environment(AppModel.self) private var app
+    @Binding var isCollapsed: Bool
     @State private var confirmsClear = false
     /// At the end, where the newest are, until the user scrolls away.
     @State private var position = ScrollPosition(edge: .trailing)
@@ -55,6 +56,14 @@ struct HistoryStrip: View {
                 .padding(.leading, 6)
                 .help("By date, the newest on the right, or in your own order: drag the images and clips where you want them")
                 Spacer()
+                Button {
+                    withAnimation(.snappy) { isCollapsed.toggle() }
+                } label: {
+                    Image(systemName: isCollapsed ? "chevron.up" : "chevron.down")
+                }
+                .buttonStyle(.borderless)
+                .help(isCollapsed ? "Show the history thumbnails" : "Hide the history thumbnails")
+                .accessibilityLabel(isCollapsed ? "Show History" : "Hide History")
                 Menu {
                     Button("Show Folder in Finder") {
                         NSWorkspace.shared.open(HistoryStore.directory)
@@ -74,65 +83,68 @@ struct HistoryStrip: View {
             .padding(.horizontal, 14)
             .padding(.top, 8)
 
-            let isEmpty = app.visibleHistory.isEmpty && app.pendingJobs.isEmpty
-            // The "+" outside the scroll view, so it is always there: back to the next generation
-            // from anywhere in the history in one click, the strip staying where it was scrolled.
-            HStack(alignment: .top, spacing: 8) {
-                ScrollViewReader { proxy in
-                    ScrollView(.horizontal) {
-                        LazyHStack(spacing: 8) {
-                            ForEach(app.arrangedHistory) { item in
-                                HistoryThumbnail(item: item, height: thumbnailHeight, isSelected: app.isSelected(item))
-                                    .id(item.id)
+            if !isCollapsed {
+                let isEmpty = app.visibleHistory.isEmpty && app.pendingJobs.isEmpty
+                // The "+" outside the scroll view, so it is always there: back to the next generation
+                // from anywhere in the history in one click, the strip staying where it was scrolled.
+                HStack(alignment: .top, spacing: 8) {
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal) {
+                            LazyHStack(spacing: 8) {
+                                ForEach(app.arrangedHistory) { item in
+                                    HistoryThumbnail(item: item, height: thumbnailHeight, isSelected: app.isSelected(item))
+                                        .id(item.id)
+                                }
+                                // The running job next to the images it will join, then the queue.
+                                ForEach(app.pendingJobs) { job in
+                                    JobThumbnail(job: job, height: thumbnailHeight, isSelected: app.isSelected(job))
+                                        .id(job.id)
+                                }
+                                if isEmpty {
+                                    Text(app.showsPrivateHistory
+                                         ? "Nothing private yet: turn the padlock on and generate, or move an image here from its menu."
+                                         : "Generated images will appear here.")
+                                        .font(.callout)
+                                        .foregroundStyle(.tertiary)
+                                        .frame(height: thumbnailHeight)
+                                }
                             }
-                            // The running job next to the images it will join, then the queue.
-                            ForEach(app.pendingJobs) { job in
-                                JobThumbnail(job: job, height: thumbnailHeight, isSelected: app.isSelected(job))
-                                    .id(job.id)
-                            }
-                            if isEmpty {
-                                Text(app.showsPrivateHistory
-                                     ? "Nothing private yet: turn the padlock on and generate, or move an image here from its menu."
-                                     : "Generated images will appear here.")
-                                    .font(.callout)
-                                    .foregroundStyle(.tertiary)
-                                    .frame(height: thumbnailHeight)
+                            .padding(.leading, 14)
+                            .padding(.trailing, isEmpty ? 14 : 0)
+                            .padding(.vertical, rowPadding)
+                            // Only the vertical, which scrolling leaves alone.
+                            .onGeometryChange(for: CGFloat.self) { proxy in
+                                let row = proxy.frame(in: .named("HistoryStrip"))
+                                return row.minY + (row.height - thumbnailHeight) / 2 - rowPadding
+                            } action: {
+                                rowOffset = $0
                             }
                         }
-                        .padding(.leading, 14)
-                        .padding(.trailing, isEmpty ? 14 : 0)
-                        .padding(.vertical, rowPadding)
-                        // Only the vertical, which scrolling leaves alone.
-                        .onGeometryChange(for: CGFloat.self) { proxy in
-                            let row = proxy.frame(in: .named("HistoryStrip"))
-                            return row.minY + (row.height - thumbnailHeight) / 2 - rowPadding
-                        } action: {
-                            rowOffset = $0
+                        .scrollIndicators(.automatic)
+                        .scrollPosition($position)
+                        .onChange(of: app.displayedItem?.id ?? app.displayedJob?.id) { _, id in
+                            guard let id else { return }
+                            withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
+                        }
+                        // A new job: back to the end, where it is. Not after a deletion, which leaves the
+                        // strip where it was.
+                        .onChange(of: app.history.items.count + app.pendingJobs.count) { old, new in
+                            guard new > old else { return }
+                            withAnimation(.snappy) { position.scrollTo(edge: .trailing) }
                         }
                     }
-                    .scrollIndicators(.automatic)
-                    .scrollPosition($position)
-                    .onChange(of: app.displayedItem?.id ?? app.displayedJob?.id) { _, id in
-                        guard let id else { return }
-                        withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
-                    }
-                    // A new job: back to the end, where it is. Not after a deletion, which leaves the
-                    // strip where it was.
-                    .onChange(of: app.history.items.count + app.pendingJobs.count) { old, new in
-                        guard new > old else { return }
-                        withAnimation(.snappy) { position.scrollTo(edge: .trailing) }
+                    if !isEmpty {
+                        NewTile(height: thumbnailHeight)
+                            .padding(.trailing, 14)
+                            .padding(.vertical, rowPadding)
+                            .offset(y: rowOffset)
                     }
                 }
-                if !isEmpty {
-                    NewTile(height: thumbnailHeight)
-                        .padding(.trailing, 14)
-                        .padding(.vertical, rowPadding)
-                        .offset(y: rowOffset)
-                }
+                .coordinateSpace(.named("HistoryStrip"))
             }
-            .coordinateSpace(.named("HistoryStrip"))
         }
-        .frame(height: thumbnailHeight + 48)
+        .frame(height: isCollapsed ? 38 : thumbnailHeight + 48, alignment: .top)
+        .animation(.snappy, value: isCollapsed)
         .background(.background)
         .confirmationDialog(
             app.showsPrivateHistory ? "Clear the private history?" : "Clear the history?",
@@ -193,6 +205,14 @@ private func thumbnailWidth(for size: PixelSize, height: CGFloat) -> CGFloat {
     return min(max(height * ratio, height * 0.56), height * 1.78)
 }
 
+/// "2×": an upscale's factor, as the thumbnail tag shows it.
+private func upscaleTag(_ factor: Double) -> String {
+    let value = factor.rounded() == factor
+        ? "\(Int(factor))"
+        : factor.formatted(.number.precision(.fractionLength(1)))
+    return "\(value)×"
+}
+
 private struct HistoryThumbnail: View {
     @Environment(AppModel.self) private var app
     @Environment(\.undoManager) private var undoManager
@@ -232,6 +252,23 @@ private struct HistoryThumbnail: View {
                         .help(engine == "mflux"
                               ? "Rendered by the render Mac's mflux engine"
                               : "Rendered by the render Mac's native engine")
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                // An upscale of another picture, as its factor ("2×"): the item's caption says
+                // it in words once it is opened.
+                if let factor = item.request.upscale {
+                    HStack(spacing: 2) {
+                        Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        Text(upscaleTag(factor))
+                    }
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .padding(5)
+                    .help("Upscaled \(upscaleTag(factor))")
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 6))
