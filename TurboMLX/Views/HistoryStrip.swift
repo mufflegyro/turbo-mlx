@@ -38,9 +38,11 @@ struct HistoryStrip: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text("History").font(.headline)
+                    .allowsHitTesting(false)
                 Text("\(app.visibleHistory.count)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
+                    .allowsHitTesting(false)
                 // The padlock: on, the strip shows the private history and the next generations
                 // are kept there; off, the normal history and its generations.
                 Button {
@@ -97,28 +99,31 @@ struct HistoryStrip: View {
             }
             .padding(.horizontal, 14)
             .padding(.top, 8)
-            .contentShape(Rectangle())
-            // The bar itself folds and resizes: double-click it, or drag it up for taller
-            // thumbnails (down for shorter ones). The resize cursor, as the prompt block's
-            // bottom edge uses.
-            .pointerStyle(isCollapsed ? PointerStyle.default : .frameResize(position: .top))
-            .onTapGesture(count: 2) {
-                withAnimation(.snappy) { isCollapsed.toggle() }
+            // The bar folds and resizes from its own surface, not from the buttons on it: the
+            // drag layer sits behind them, and the title and count let clicks through to it.
+            // The pointer is the prompt block's resize cursor only over the bar itself.
+            .background {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .pointerStyle(isCollapsed ? PointerStyle.default : .frameResize(position: .top))
+                    .onTapGesture(count: 2) {
+                        withAnimation(.snappy) { isCollapsed.toggle() }
+                    }
+                    .gesture(
+                        // Global coordinates: the bar moves up as the strip grows, so a local
+                        // drag would chase itself and make the thumbnails jump.
+                        DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                            .updating($stretch) { value, state, _ in
+                                guard !isCollapsed else { return }
+                                state = value.translation.height
+                            }
+                            .onEnded { value in
+                                guard !isCollapsed else { return }
+                                thumbnailHeightValue = Double(thumbnailHeight(stretchedBy: value.translation.height))
+                            }
+                    )
+                    .help("Double-click to fold or unfold the history; drag up or down to resize the thumbnails")
             }
-            .gesture(
-                // Global coordinates: the bar moves up as the strip grows, so a local drag
-                // would chase itself and make the thumbnails jump.
-                DragGesture(minimumDistance: 1, coordinateSpace: .global)
-                    .updating($stretch) { value, state, _ in
-                        guard !isCollapsed else { return }
-                        state = value.translation.height
-                    }
-                    .onEnded { value in
-                        guard !isCollapsed else { return }
-                        thumbnailHeightValue = Double(thumbnailHeight(stretchedBy: value.translation.height))
-                    }
-            )
-            .help("Double-click to fold or unfold the history; drag up or down to resize the thumbnails")
 
             let isEmpty = app.visibleHistory.isEmpty && app.pendingJobs.isEmpty
             // The "+" outside the scroll view, so it is always there: back to the next generation
@@ -158,6 +163,15 @@ struct HistoryStrip: View {
                     }
                     .scrollIndicators(.automatic)
                     .scrollPosition($position)
+                    .onChange(of: isCollapsed) { _, collapsed in
+                        guard !collapsed else { return }
+                        // A folded strip has no viewport, so the scroll view forgets where it
+                        // was: bring the item on the stage — or the newest — back into view.
+                        let target = app.displayedItem?.id ?? app.displayedJob?.id
+                            ?? app.pendingJobs.last?.id ?? app.arrangedHistory.last?.id
+                        guard let target else { return }
+                        withAnimation(.snappy) { proxy.scrollTo(target, anchor: .trailing) }
+                    }
                     .onChange(of: app.displayedItem?.id ?? app.displayedJob?.id) { _, id in
                         guard let id else { return }
                         withAnimation(.snappy) { proxy.scrollTo(id, anchor: .center) }
