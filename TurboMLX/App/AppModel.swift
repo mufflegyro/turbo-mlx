@@ -84,6 +84,7 @@ final class AppModel {
         defaults.set(address, forKey: Keys.remoteAddress)
         defaults.set(token, forKey: Keys.remoteToken)
         downloads.cancelAll()
+        removeServerModels()
         backend.stopWorker()
         backend = Self.makeTransport()
         activeJob = nil
@@ -174,6 +175,9 @@ final class AppModel {
 
     private(set) var models: [ModelDescriptor]
     private(set) var installed: [String: URL] = [:]
+    /// Models listed by the relay that this app's own catalog does not have (added by hand on
+    /// the server): shown in remote mode, dropped when this Mac runs its own engine.
+    @ObservationIgnored private var serverModelIDs: Set<String> = []
     /// Bytes each Hugging Face repository of the list (companions too) takes in the cache, partial
     /// downloads included: what moving a model to the Trash frees. Measured with `installed`.
     private(set) var bytesOnDisk: [String: Int64] = [:]
@@ -384,6 +388,12 @@ final class AppModel {
     func start() async {
         guard !started else { return }
         started = true
+        // A model remembered from another transport may not exist here: a relay's own model
+        // in local mode, or a custom model that was removed. In remote mode the /models fetch
+        // adds or resolves it.
+        if !isRemote, !models.contains(where: { $0.id == selectedModelID }) {
+            selectedModelID = ModelCatalog.defaultModelID
+        }
         history.load()
         promptLibrary.load()
         history.pruneReferences(keeping: [settings.referenceImage, settings.lastFrameImage].compactMap { $0 })
@@ -468,6 +478,7 @@ final class AppModel {
             guard let self else { return }
             do {
                 let entries = try await remote.fetchModels()
+                mergeServerModels(entries)
                 var found: [String: URL] = [:]
                 for entry in entries {
                     guard let id = entry["id"] as? String, entry["state"] as? String == "downloaded" else { continue }
@@ -479,6 +490,53 @@ final class AppModel {
             } catch {
                 // Keep the previous availability; the connection may come back (spec §Job registry).
             }
+        }
+    }
+
+    /// Adds the relay's own models (those this app's catalog does not ship) to the picker, and
+    /// drops ones that are gone from the relay. A descriptor travels with each /models entry
+    /// (A10), so a model added by hand on the render Mac is usable here without being added
+    /// again. They exist only while the app is in remote mode.
+    private func mergeServerModels(_ entries: [[String: Any]]) {
+        guard isRemote else { return }
+        var listed: [String: ModelDescriptor] = [:]
+        for entry in entries {
+            guard let object = entry["descriptor"] as? [String: Any],
+                  let data = try? JSONSerialization.data(withJSONObject: object),
+                  let descriptor = try? JSONDecoder().decode(ModelDescriptor.self, from: data),
+                  !descriptor.isBuiltIn,
+                  !ModelCatalog.builtIn.contains(where: { $0.id == descriptor.id })
+            else { continue }
+            listed[descriptor.id] = descriptor
+        }
+        // A model removed on the relay goes away here too.
+        models.removeAll { serverModelIDs.contains($0.id) && listed[$0.id] == nil }
+        serverModelIDs.formIntersection(listed.keys)
+        for (id, var descriptor) in listed {
+            // A model this app added itself keeps its own descriptor.
+            if let index = models.firstIndex(where: { $0.id == id }) {
+                guard serverModelIDs.contains(id) else { continue }
+                descriptor.isBuiltIn = true
+                models[index] = descriptor
+            } else {
+                descriptor.isBuiltIn = true
+                models.append(descriptor)
+                serverModelIDs.insert(id)
+            }
+        }
+        if !models.contains(where: { $0.id == selectedModelID }) {
+            selectedModelID = ModelCatalog.defaultModelID
+        }
+    }
+
+    /// Back on this Mac's engine: the relay's own models are not local models.
+    private func removeServerModels() {
+        guard !serverModelIDs.isEmpty else { return }
+        let selectedWasServer = serverModelIDs.contains(selectedModelID)
+        models.removeAll { serverModelIDs.contains($0.id) }
+        serverModelIDs.removeAll()
+        if selectedWasServer || !models.contains(where: { $0.id == selectedModelID }) {
+            selectedModelID = ModelCatalog.defaultModelID
         }
     }
 

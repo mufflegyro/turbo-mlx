@@ -111,7 +111,9 @@ models want more, see the table) and room on the disk for the models you pick.
 
 *Minimum RAM* is the memory your Mac needs for the model; *Download* is the space it takes on
 the disk. Krea 2 and Qwen-Image 2.1 run only on a **render Mac** (TurboRelay): its mflux
-engine serves them, and they appear in the picker only in remote mode.
+engine serves them, and they appear in the picker only in remote mode. While connected, the
+picker also lists any model added by hand on that relay, even when this app's catalog does
+not have it; it is hidden again when this Mac runs its own engine.
 
 | Model | Minimum RAM | Download | Good for |
 |---|---|---|---|
