@@ -1313,7 +1313,7 @@ private struct ReferenceSlot: View {
                         .help("Choose an image file")
                     Button("From History…") { showsHistory = true }
                         .help("Pick one of the images generated here, or a clip’s first frame")
-                        .disabled(app.history.items.isEmpty)
+                        .disabled(app.pickableHistory.isEmpty)
                         .popover(isPresented: $showsHistory, arrowEdge: .trailing) {
                             HistoryImagePicker { item in
                                 showsHistory = false
@@ -1428,8 +1428,9 @@ private struct HistoryImagePicker: View {
     let pick: (HistoryItem) -> Void
 
     var body: some View {
-        // A song's waveform is no picture to start from.
-        let items = app.history.items.filter { $0.kind != .audio }
+        // The strip's current history, minus sounds: private pictures are here only while the
+        // padlock is on, so the picker cannot reveal them from the normal history.
+        let items = app.pickableHistory
         let rows = (items.count + 3) / 4
         ScrollView {
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(88), spacing: 8), count: 4), spacing: 8) {

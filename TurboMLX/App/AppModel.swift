@@ -362,6 +362,12 @@ final class AppModel {
         history.items.filter { $0.inPrivateHistory == showsPrivateHistory }
     }
 
+    /// What "From History…" offers: the history the strip is showing (so private items appear only
+    /// while the padlock is on), without sounds, which are no picture to start from.
+    var pickableHistory: [HistoryItem] {
+        visibleHistory.filter { $0.kind != .audio }
+    }
+
     /// The history left to right, as the strip shows it and ⌘[ ⌘] walk it.
     var arrangedHistory: [HistoryItem] {
         history.arranged(historyOrder).filter { $0.inPrivateHistory == showsPrivateHistory }
