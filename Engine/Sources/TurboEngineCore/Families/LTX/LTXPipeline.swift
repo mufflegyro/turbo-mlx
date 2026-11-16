@@ -232,10 +232,14 @@ public final class LTXVideoModel: VideoFamilyModel, LoRAAdaptable {
         return transformer!
     }
 
-    /// Releases the resident transformer when the next stage needs the other variant: it would be
-    /// replaced anyway, and keeping it during the reference picture's encode is a needless peak.
-    private func releaseTransformerReplaced(by variant: TransformerVariant) {
-        guard transformer != nil, transformerVariant != variant else { return }
+    /// Releases the resident transformer when the next stage needs the other variant (it would be
+    /// replaced anyway) or when the reference picture's full-resolution encode is large enough that
+    /// it and the transformer together are a needless peak. A same-variant reload costs a model
+    /// load, but only for large references.
+    private func releaseTransformerForReference(width: Int, height: Int, next: TransformerVariant) {
+        guard transformer != nil else { return }
+        let large = width * height > 1_000_000
+        guard large || transformerVariant != next else { return }
         transformer = nil
         Memory.clearCache()
     }
@@ -398,12 +402,15 @@ public final class LTXVideoModel: VideoFamilyModel, LoRAAdaptable {
 
         // Stage 1: half resolution, from noise.
         phase(.denoising)
+        let f = geometry.latentFrames
+        let (h1, w1) = (geometry.latentHeight / 2, geometry.latentWidth / 2)
         // A transformer the stage will replace (Quality preloads distilled, then runs dev) must
         // not sit in memory while the reference picture is encoded: on a tight Mac the VAE
         // encoder and the resident transformer together are the peak.
-        releaseTransformerReplaced(by: request.quality ? .dev : .distilled)
-        let f = geometry.latentFrames
-        let (h1, w1) = (geometry.latentHeight / 2, geometry.latentWidth / 2)
+        if reference != nil || ending != nil {
+            releaseTransformerForReference(width: w1 * 32, height: h1 * 32,
+                                           next: request.quality ? .dev : .distilled)
+        }
         let audioTokens = geometry.audioTokens
         var video1 = Self.initialState(shape: [1, f * h1 * w1, 128], seed: request.seed)
         var videoPositions1 = Self.videoPositions(frames: f, height: h1, width: w1, fps: geometry.fps)
@@ -452,7 +459,9 @@ public final class LTXVideoModel: VideoFamilyModel, LoRAAdaptable {
         let start = stage2Sigmas[0]
         var video2 = Self.renoised(upsampled, sigma: start, seed: request.seed + LTXConfig.stage2SeedOffset)
         var videoPositions2 = Self.videoPositions(frames: f, height: h2, width: w2, fps: geometry.fps)
-        releaseTransformerReplaced(by: .distilled)
+        if reference != nil || ending != nil {
+            releaseTransformerForReference(width: w2 * 32, height: h2 * 32, next: .distilled)
+        }
         if let reference, let encoder {
             let tokens = try reference.tokens(width: w2 * 32, height: h2 * 32, encoder: encoder)
             video2 = Self.conditioned(video2, firstFrame: tokens, tokensPerFrame: h2 * w2)
