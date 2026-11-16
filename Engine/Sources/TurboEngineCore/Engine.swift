@@ -235,35 +235,37 @@ public final class Engine {
         // A clip stopped or failed halfway leaves no partial MP4 behind.
         var clip: GeneratedClip?
         defer { if clip == nil { writer?.cancel() } }
-        clip = try model.generateVideo(
-            request,
-            phase: { [self] phase in
-                switch phase {
-                case .denoising:
-                    mark("denoise_start")
-                    var fields: [String: Any] = ["id": id, "phase": "denoising", "total": totalSteps]
-                    if let frames = request.frames { fields["frames"] = frames }
-                    emitter.emit("phase", fields)
-                case .decoding:
-                    mark("denoise_end")
-                    emitter.emit("phase", ["id": id, "phase": "decoding"])
-                default:
-                    break
+        clip = try withError {
+            try model.generateVideo(
+                request,
+                phase: { [self] phase in
+                    switch phase {
+                    case .denoising:
+                        mark("denoise_start")
+                        var fields: [String: Any] = ["id": id, "phase": "denoising", "total": totalSteps]
+                        if let frames = request.frames { fields["frames"] = frames }
+                        emitter.emit("phase", fields)
+                    case .decoding:
+                        mark("denoise_end")
+                        emitter.emit("phase", ["id": id, "phase": "decoding"])
+                    default:
+                        break
+                    }
+                },
+                progress: { [self] step, total in
+                    emitter.emit("progress", ["id": id, "step": step, "total": total])
+                },
+                isCancelled: { [self] in isCancelled(id) },
+                audio: { samples, rate in sound = (samples, rate) },
+                frames: { frames in
+                    if writer == nil {
+                        writer = try VideoOutput(url: output, width: frames.shape[2], height: frames.shape[1],
+                                                 fps: request.fps ?? 24, audio: sound.samples, sampleRate: sound.rate)
+                    }
+                    try writer!.append(frames: frames)
                 }
-            },
-            progress: { [self] step, total in
-                emitter.emit("progress", ["id": id, "step": step, "total": total])
-            },
-            isCancelled: { [self] in isCancelled(id) },
-            audio: { samples, rate in sound = (samples, rate) },
-            frames: { frames in
-                if writer == nil {
-                    writer = try VideoOutput(url: output, width: frames.shape[2], height: frames.shape[1],
-                                             fps: request.fps ?? 24, audio: sound.samples, sampleRate: sound.rate)
-                }
-                try writer!.append(frames: frames)
-            }
-        )
+            )
+        }
         mark("decode_end")
 
         emitter.emit("phase", ["id": id, "phase": "encoding_video"])

@@ -57,11 +57,19 @@ struct LTXReferenceImage {
         return (out, outWidth, outHeight)
     }
 
-    /// The first frame's latent tokens [1, h·w, 128] at `width` × `height` pixels.
-    func tokens(width: Int, height: Int, encoder: LTXVideoEncoder) -> MLXArray {
-        let latent = encoder.encode(pixels(width: width, height: height).expandedDimensions(axis: 2))
-        eval(latent)
-        return latent.transposed(0, 2, 3, 4, 1).reshaped([1, -1, 128])
+    /// The first frame's latent tokens [1, h·w, 128] at `width` × `height` pixels. MLX errors are
+    /// turned into a Swift error naming the picture's encode, so a bad or too-large reference
+    /// fails the job instead of asserting in the engine.
+    func tokens(width: Int, height: Int, encoder: LTXVideoEncoder) throws -> MLXArray {
+        do {
+            return try withError {
+                let latent = encoder.encode(pixels(width: width, height: height).expandedDimensions(axis: 2))
+                eval(latent)
+                return latent.transposed(0, 2, 3, 4, 1).reshaped([1, -1, 128])
+            }
+        } catch {
+            throw LTXError.referenceEncoding(width: width, height: height, reason: error.localizedDescription)
+        }
     }
 
     /// `resize_and_center_crop` then `normalize_images`: scaled to cover `width` × `height` on

@@ -35,6 +35,10 @@ public enum LTXError: LocalizedError {
     case unreadableImage(String)
     /// The decoder's tiling cannot bring this clip within the memory the Mac can spare.
     case clipTooLarge(frames: Int, width: Int, height: Int, needed: Int)
+    /// The VAE encoder failed on the reference image (an MLX error, with its message).
+    case referenceEncoding(width: Int, height: Int, reason: String)
+    /// The VAE decoder failed while writing frames (an MLX error, with its message).
+    case decodeFailed(reason: String)
 
     public var errorDescription: String? {
         switch self {
@@ -43,6 +47,10 @@ public enum LTXError: LocalizedError {
         case .unreadableImage(let path): "Could not read the reference image \(path)."
         case .clipTooLarge(let frames, let width, let height, let needed):
             "A \(width) × \(height) clip of \(frames) frames needs about \(needed) GB to decode, more than this Mac can spare. Make the clip shorter or smaller, or turn on Save memory."
+        case .referenceEncoding(let width, let height, let reason):
+            "Could not encode the reference image at \(width) × \(height): \(reason). Try a smaller reference picture or Save memory."
+        case .decodeFailed(let reason):
+            "Could not decode the clip: \(reason). Try a shorter or smaller clip, or turn on Save memory."
         }
     }
 }
@@ -224,6 +232,14 @@ public final class LTXVideoModel: VideoFamilyModel, LoRAAdaptable {
         return transformer!
     }
 
+    /// Releases the resident transformer when the next stage needs the other variant: it would be
+    /// replaced anyway, and keeping it during the reference picture's encode is a needless peak.
+    private func releaseTransformerReplaced(by variant: TransformerVariant) {
+        guard transformer != nil, transformerVariant != variant else { return }
+        transformer = nil
+        Memory.clearCache()
+    }
+
     private func loadTextSide() throws {
         var connectorTensors = try loadArrays(url: file("connector.safetensors"))
         let gemma: LTXTextTower
@@ -382,17 +398,21 @@ public final class LTXVideoModel: VideoFamilyModel, LoRAAdaptable {
 
         // Stage 1: half resolution, from noise.
         phase(.denoising)
+        // A transformer the stage will replace (Quality preloads distilled, then runs dev) must
+        // not sit in memory while the reference picture is encoded: on a tight Mac the VAE
+        // encoder and the resident transformer together are the peak.
+        releaseTransformerReplaced(by: request.quality ? .dev : .distilled)
         let f = geometry.latentFrames
         let (h1, w1) = (geometry.latentHeight / 2, geometry.latentWidth / 2)
         let audioTokens = geometry.audioTokens
         var video1 = Self.initialState(shape: [1, f * h1 * w1, 128], seed: request.seed)
         var videoPositions1 = Self.videoPositions(frames: f, height: h1, width: w1, fps: geometry.fps)
         if let reference, let encoder {
-            let tokens = reference.tokens(width: w1 * 32, height: h1 * 32, encoder: encoder)
+            let tokens = try reference.tokens(width: w1 * 32, height: h1 * 32, encoder: encoder)
             video1 = Self.conditioned(video1, firstFrame: tokens, tokensPerFrame: h1 * w1)
         }
         if let ending, let encoder {
-            let tokens = ending.tokens(width: w1 * 32, height: h1 * 32, encoder: encoder)
+            let tokens = try ending.tokens(width: w1 * 32, height: h1 * 32, encoder: encoder)
             video1 = Self.appendingKeyframe(video1, tokens: tokens)
             videoPositions1 = concatenated([videoPositions1, Self.keyframePositions(
                 frame: geometry.frames - 1, height: h1, width: w1, fps: geometry.fps)], axis: 1)
@@ -432,12 +452,13 @@ public final class LTXVideoModel: VideoFamilyModel, LoRAAdaptable {
         let start = stage2Sigmas[0]
         var video2 = Self.renoised(upsampled, sigma: start, seed: request.seed + LTXConfig.stage2SeedOffset)
         var videoPositions2 = Self.videoPositions(frames: f, height: h2, width: w2, fps: geometry.fps)
+        releaseTransformerReplaced(by: .distilled)
         if let reference, let encoder {
-            let tokens = reference.tokens(width: w2 * 32, height: h2 * 32, encoder: encoder)
+            let tokens = try reference.tokens(width: w2 * 32, height: h2 * 32, encoder: encoder)
             video2 = Self.conditioned(video2, firstFrame: tokens, tokensPerFrame: h2 * w2)
         }
         if let ending, let encoder {
-            let tokens = ending.tokens(width: w2 * 32, height: h2 * 32, encoder: encoder)
+            let tokens = try ending.tokens(width: w2 * 32, height: h2 * 32, encoder: encoder)
             video2 = Self.appendingKeyframe(video2, tokens: tokens)
             videoPositions2 = concatenated([videoPositions2, Self.keyframePositions(
                 frame: geometry.frames - 1, height: h2, width: w2, fps: geometry.fps)], axis: 1)
@@ -755,8 +776,14 @@ public final class LTXVideoModel: VideoFamilyModel, LoRAAdaptable {
             throw LTXError.clipTooLarge(frames: frames, width: width, height: height,
                                         needed: Int((Double(estimate) / 1_000_000_000).rounded(.up)))
         }
-        try LTXDecodeTiling.decode(latent, decoder: decoder, tiling: tiling, isCancelled: isCancelled) { chunk in
-            try sink(Self.toFrames(chunk))
+        do {
+            try withError {
+                try LTXDecodeTiling.decode(latent, decoder: decoder, tiling: tiling, isCancelled: isCancelled) { chunk in
+                    try sink(Self.toFrames(chunk))
+                }
+            }
+        } catch {
+            throw LTXError.decodeFailed(reason: error.localizedDescription)
         }
     }
 
