@@ -234,11 +234,11 @@ public final class LTXVideoModel: VideoFamilyModel, LoRAAdaptable {
 
     /// Releases the resident transformer when the next stage needs the other variant (it would be
     /// replaced anyway) or when the reference picture's full-resolution encode is large enough that
-    /// it and the transformer together are a needless peak. A same-variant reload costs a model
-    /// load, but only for large references.
+    /// it and the transformer together are a needless peak (720p's stage 2 and above). A
+    /// same-variant reload costs a model load, but only for those references.
     private func releaseTransformerForReference(width: Int, height: Int, next: TransformerVariant) {
         guard transformer != nil else { return }
-        let large = width * height > 1_000_000
+        let large = width * height > 800_000
         guard large || transformerVariant != next else { return }
         transformer = nil
         Memory.clearCache()
