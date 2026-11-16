@@ -628,9 +628,12 @@ private struct LoRARow: View {
                         if let words = entry.info?.triggerWords, !words.isEmpty {
                             TriggerWords(words: words)
                         }
-                        // The few-step adapters (4-step dmd, 8-step DMD, …) are distilled for
-                        // their own step count and guidance 1; run plain, they render mush.
-                        if model.family == .mossImage {
+                        // A few-step adapter carries its own step count (set when chosen); one
+                        // whose file does not say may still be a 4-step or 8-step DMD.
+                        if let steps = entry.info?.steps {
+                            Text("\(steps)-step adapter: \(steps) steps and guidance Off.")
+                                .foregroundStyle(.secondary)
+                        } else if model.family == .mossImage {
                             Text("If this is a few-step adapter (4-step, 8-step DMD, …), set its own step count and guidance to Off.")
                                 .foregroundStyle(.secondary)
                         }
@@ -690,6 +693,7 @@ private struct LoRARow: View {
             message = nil
             let scale = app.settings.lora(for: model.family)?.scale ?? 1
             app.settings.setLoRA(LoRAChoice(file: entry.file, scale: scale), for: model.family)
+            app.applyLoRAHints(for: model)
         } catch {
             message = "Couldn’t add \(name): \(error.localizedDescription)"
         }
@@ -772,6 +776,7 @@ private struct LoRAMenu: View {
         choose()
         let scale = app.settings.lora(for: model.family)?.scale ?? 1
         app.settings.setLoRA(entry.map { LoRAChoice(file: $0.file, scale: scale) }, for: model.family)
+        app.applyLoRAHints(for: model)
     }
 }
 

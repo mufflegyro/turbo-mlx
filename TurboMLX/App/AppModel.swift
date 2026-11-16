@@ -247,6 +247,7 @@ final class AppModel {
                     restored.guidance = saved.guidance
                     restored.negativePrompt = saved.negativePrompt
                     settings = restored
+                    applyLoRAHints(for: model, onlyIfDefault: true)
                     return
                 }
             }
@@ -255,12 +256,16 @@ final class AppModel {
                     || prior.defaultSteps(quality: settings.fullPipeline(for: prior))
                         != model.defaultSteps(quality: settings.fullPipeline(for: model))
             } ?? true
-            guard needsDefaults else { return }
+            guard needsDefaults else {
+                applyLoRAHints(for: model, onlyIfDefault: true)
+                return
+            }
             // A model without a remembered tuning starts from the family's defaults: steps and
             // guidance mean different things across families.
             let quality = settings.fullPipeline(for: model)
             settings.steps = model.defaultSteps(quality: quality)
             settings.guidance = model.defaultGuidance(quality: quality)
+            applyLoRAHints(for: model, onlyIfDefault: true)
         }
     }
 
@@ -451,6 +456,9 @@ final class AppModel {
         promptLibrary.load()
         history.pruneReferences(keeping: [settings.referenceImage, settings.lastFrameImage].compactMap { $0 })
         loraLibrary.refresh()
+        if let model = selectedModel {
+            applyLoRAHints(for: model, onlyIfDefault: true)
+        }
         // The models folder and local model folders before the engine, which inherits the access
         // they open.
         ModelFolder.restore()
@@ -891,6 +899,20 @@ final class AppModel {
         guard let entry = loraLibrary.entry(choice.file) else { return .missing(choice) }
         if let base = entry.info?.base, base.fits(model) == false { return .mismatch(choice, base) }
         return .ready(choice, entry)
+    }
+
+    /// A few-step adapter (8-step DMD, 4-step, …) carries the count it was distilled for: choosing
+    /// it sets the steps and guidance Off, which its captions otherwise only warned about. With
+    /// `onlyIfDefault`, a tuned step count is left alone (for a model switch restoring settings).
+    func applyLoRAHints(for model: ModelDescriptor, onlyIfDefault: Bool = false) {
+        guard case .ready(_, let entry) = loraState(for: model), let steps = entry.info?.steps else { return }
+        let range = model.stepRange(quality: settings.fullPipeline(for: model))
+        if onlyIfDefault,
+           settings.steps != model.defaultSteps(quality: settings.fullPipeline(for: model)) {
+            return
+        }
+        settings.steps = min(max(steps, range.lowerBound), range.upperBound)
+        settings.guidance = 1
     }
 
     // MARK: Remote LoRAs

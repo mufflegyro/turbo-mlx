@@ -92,6 +92,9 @@ nonisolated struct LoRAFileInfo: Hashable, Sendable {
     var base: LoRABase
     var triggerWords: [String]
     var layers: Int
+    /// The step count a distilled few-step adapter was trained for (8-step DMD, 4-step, …), when
+    /// its name or metadata says it; choosing one sets the steps and guidance to match.
+    var steps: Int?
 
     enum ReadError: LocalizedError {
         case unreadable
@@ -115,7 +118,34 @@ nonisolated struct LoRAFileInfo: Hashable, Sendable {
         }
         guard !downs.isEmpty, !ups.isEmpty else { throw ReadError.notLoRA }
         return LoRAFileInfo(base: base(downs: downs, ups: ups, metadata: metadata), triggerWords: triggerWords(metadata),
-                            layers: downs.count)
+                            layers: downs.count,
+                            steps: stepCount(name: url.deletingPathExtension().lastPathComponent, metadata: metadata))
+    }
+
+    /// The few-step adapter's count, from its file name or the trainer's note: "8-step", "8 steps",
+    /// "8step", "steps 8". Only a plausible inference count (2–60) is kept; DMD without a number
+    /// stays unknown rather than guessing 4 or 8.
+    static func stepCount(name: String, metadata: [String: String]) -> Int? {
+        var texts = [name]
+        for key in ["ss_training_comment", "modelspec.description", "modelspec.title", "ss_output_name",
+                    "modelspec.trigger_phrase"] {
+            if let value = metadata[key] { texts.append(value) }
+        }
+        let normalized = texts.joined(separator: " ")
+            .lowercased()
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+        let tokens = normalized.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+        for (index, token) in tokens.enumerated() {
+            var value: Int?
+            if token == "step" || token == "steps" {
+                if index > 0 { value = Int(tokens[index - 1]) }
+            } else if token.hasSuffix("steps") || token.hasSuffix("step") {
+                value = Int(token.prefix { $0.isNumber })
+            }
+            if let value, (2 ... 60).contains(value) { return value }
+        }
+        return nil
     }
 
     // MARK: Header
