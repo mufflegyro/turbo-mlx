@@ -903,13 +903,16 @@ final class AppModel {
 
     /// A few-step adapter (8-step DMD, 4-step, …) carries the count it was distilled for: choosing
     /// it sets the steps and guidance Off, which its captions otherwise only warned about. With
-    /// `onlyIfDefault`, a tuned step count is left alone (for a model switch restoring settings).
+    /// `onlyIfDefault`, settings that are not at the model's defaults on either count are left alone
+    /// (for a model switch restoring a tuning).
     func applyLoRAHints(for model: ModelDescriptor, onlyIfDefault: Bool = false) {
         guard case .ready(_, let entry) = loraState(for: model), let steps = entry.info?.steps else { return }
         let range = model.stepRange(quality: settings.fullPipeline(for: model))
-        if onlyIfDefault,
-           settings.steps != model.defaultSteps(quality: settings.fullPipeline(for: model)) {
-            return
+        if onlyIfDefault {
+            let quality = settings.fullPipeline(for: model)
+            let untouched = settings.steps == model.defaultSteps(quality: quality)
+                || settings.guidance == model.defaultGuidance(quality: quality)
+            guard untouched else { return }
         }
         settings.steps = min(max(steps, range.lowerBound), range.upperBound)
         settings.guidance = 1
