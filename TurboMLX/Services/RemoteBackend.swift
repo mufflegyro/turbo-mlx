@@ -557,11 +557,8 @@ final class RemoteBackend: EngineTransport {
                 wire.removeValue(forKey: "file_id")
                 if let posterID = wire["poster_file_id"] as? String {
                     wire.removeValue(forKey: "poster_file_id")
-                    if let posterData = try? await self.fetchFile(posterID) {
-                        let posterURL = output.deletingLastPathComponent()
-                            .appendingPathComponent(output.deletingPathExtension().lastPathComponent + "-poster.png")
-                        try? posterData.write(to: posterURL, options: .atomic)
-                        wire["poster"] = posterURL.path
+                    if let poster = await self.writePoster(from: posterID, for: output) {
+                        wire["poster"] = poster
                     }
                 }
                 self.forgetOutput(jobID)
@@ -575,6 +572,20 @@ final class RemoteBackend: EngineTransport {
                     self.emitFailure(jobID: jobID, message: "Couldn't fetch the result after several tries: \(error.localizedDescription). It stays on the render Mac until the next reconnect.")
                 }
             }
+        }
+    }
+
+    /// Fetches a staged poster and writes it beside the result as `<name>-poster.png`; returns
+    /// its path for the `done` event. Nil when the poster was evicted or could not be written.
+    private func writePoster(from posterID: String, for output: URL) async -> String? {
+        guard let data = try? await fetchFile(posterID) else { return nil }
+        let url = output.deletingLastPathComponent()
+            .appendingPathComponent(output.deletingPathExtension().lastPathComponent + "-poster.png")
+        do {
+            try data.write(to: url, options: .atomic)
+            return url.path
+        } catch {
+            return nil
         }
     }
 
@@ -602,6 +613,10 @@ final class RemoteBackend: EngineTransport {
                     var wire: [String: Any] = ["event": "done", "id": id, "path": outputPaths[id]!.path]
                     for key in ["seed", "width", "height", "seconds", "peak_memory", "timings"] {
                         if let value = job[key] { wire[key] = value }
+                    }
+                    if let posterID = job["poster_file_id"] as? String,
+                       let poster = await writePoster(from: posterID, for: outputPaths[id]!) {
+                        wire["poster"] = poster
                     }
                     reemit(wire)
                     log.append("[relay] delivered the result of a job that finished while the connection was down.")

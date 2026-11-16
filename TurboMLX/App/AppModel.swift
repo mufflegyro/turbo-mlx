@@ -384,6 +384,25 @@ final class AppModel {
         historyOrder = .custom
     }
 
+    /// A clip delivered without its poster (a result reconciled after a reconnect, or a poster
+    /// fetch that failed) gets one from its first frame; items from older versions are repaired
+    /// at launch. The strip, the info bar and Quick Look then show the still as usual.
+    private func repairMissingVideoPosters() {
+        let missing = history.items.filter { item in
+            guard item.media == .video else { return false }
+            return item.posterFileName == nil
+                || !FileManager.default.isReadableFile(atPath: history.posterURL(for: item).path)
+        }
+        guard !missing.isEmpty else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for item in missing {
+                guard let name = await history.makePoster(for: item) else { continue }
+                history.setPoster(fileName: name, for: item.id)
+            }
+        }
+    }
+
     init() {
         let defaults = UserDefaults.standard
         let custom = defaults.data(forKey: Keys.customModels)
@@ -428,6 +447,7 @@ final class AppModel {
             selectedModelID = ModelCatalog.defaultModelID
         }
         history.load()
+        repairMissingVideoPosters()
         promptLibrary.load()
         history.pruneReferences(keeping: [settings.referenceImage, settings.lastFrameImage].compactMap { $0 })
         loraLibrary.refresh()
@@ -1265,6 +1285,9 @@ final class AppModel {
             isPrivate: job.isPrivate ? true : nil
         ))
         if viewer == .job(job.id) { viewer = .item(job.id) }
+        if job.model.family.media == .video, poster == nil {
+            repairMissingVideoPosters()
+        }
         activeJob = nil
         if queue.isEmpty, !NSApp.isActive {
             NSApp.requestUserAttention(.informationalRequest)

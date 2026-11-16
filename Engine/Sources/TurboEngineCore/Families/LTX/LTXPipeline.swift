@@ -33,12 +33,16 @@ public enum LTXError: LocalizedError {
     case videoOnly
     case missingFile(String, URL)
     case unreadableImage(String)
+    /// The decoder's tiling cannot bring this clip within the memory the Mac can spare.
+    case clipTooLarge(frames: Int, width: Int, height: Int, needed: Int)
 
     public var errorDescription: String? {
         switch self {
         case .videoOnly: "LTX-2 makes videos, not still images."
         case .missingFile(let name, let url): "The LTX-2 model at \(url.path) has no \(name)."
         case .unreadableImage(let path): "Could not read the reference image \(path)."
+        case .clipTooLarge(let frames, let width, let height, let needed):
+            "A \(width) × \(height) clip of \(frames) frames needs about \(needed) GB to decode, more than this Mac can spare. Make the clip shorter or smaller, or turn on Save memory."
         }
     }
 }
@@ -738,10 +742,26 @@ public final class LTXVideoModel: VideoFamilyModel, LoRAAdaptable {
         let previousLimit = Memory.cacheLimit
         Memory.cacheLimit = 0
         defer { Memory.cacheLimit = previousLimit }
-        let tiling = LTXDecodeTiling.plan(latentShape: latent.shape, fps: fps, budget: LTXDecodeTiling.budget(resident: Memory.activeMemory))
+        let budget = LTXDecodeTiling.budget(resident: Memory.activeMemory)
+        let tiling = LTXDecodeTiling.plan(latentShape: latent.shape, fps: fps, budget: budget)
+        let estimate = LTXDecodeTiling.estimate(latentShape: latent.shape, config: tiling)
+        let frames = 8 * latent.shape[2] - 7
+        let width = latent.shape[4] * 32
+        let height = latent.shape[3] * 32
+        Emitter.shared.log("[turbo] decode: \(frames) frames at \(width)×\(height), \(LTXDecodeTiling.describe(tiling)); about \(Self.gigabytes(estimate)) GB of the \(Self.gigabytes(budget)) GB budget")
+        // The planner's last rung may still exceed what the Mac can spare: fail with the numbers
+        // rather than let a Metal allocation take the engine down mid-decode.
+        if tiling != nil, estimate > budget {
+            throw LTXError.clipTooLarge(frames: frames, width: width, height: height,
+                                        needed: Int((Double(estimate) / 1_000_000_000).rounded(.up)))
+        }
         try LTXDecodeTiling.decode(latent, decoder: decoder, tiling: tiling, isCancelled: isCancelled) { chunk in
             try sink(Self.toFrames(chunk))
         }
+    }
+
+    private static func gigabytes(_ bytes: Int) -> String {
+        (Double(bytes) / 1_000_000_000).formatted(.number.precision(.fractionLength(1)))
     }
 
     /// [1, 3, N, H, W] in [-1, 1] → [N, H, W, 3] uint8, truncated as the reference converts it.

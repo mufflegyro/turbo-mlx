@@ -216,6 +216,43 @@ final class HistoryStore {
         save()
     }
 
+    /// Gives an item a poster made after the fact (a clip delivered without one, or from an older
+    /// app), so the strip, the info bar and Quick Look show its first frame.
+    func setPoster(fileName: String, for id: HistoryItem.ID) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+        guard items[index].posterFileName != fileName else { return }
+        items[index].posterFileName = fileName
+        save()
+        ImageLoader.evict(posterURL(for: items[index]))
+    }
+
+    /// A clip's first frame as a PNG beside it, when the item has no poster (a result delivered
+    /// after a reconnect, or one whose poster could not be fetched). Nil when the clip cannot be
+    /// read or the PNG cannot be written.
+    func makePoster(for item: HistoryItem) async -> String? {
+        guard item.media == .video else { return nil }
+        let video = url(for: item)
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: video))
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        guard let image = try? await generator.image(at: .zero).image else { return nil }
+        let name = video.deletingPathExtension().lastPathComponent + "-poster.png"
+        let destination = Self.directory.appending(path: name)
+        let data = NSMutableData()
+        guard let destinationImage = CGImageDestinationCreateWithData(
+            data, UTType.png.identifier as CFString, 1, nil
+        ) else { return nil }
+        CGImageDestinationAddImage(destinationImage, image, nil)
+        guard CGImageDestinationFinalize(destinationImage) else { return nil }
+        do {
+            try (data as Data).write(to: destination, options: .atomic)
+            return name
+        } catch {
+            return nil
+        }
+    }
+
     /// Moves an item into the private history (or back to the normal one). The file does not move:
     /// only the index's flag changes, so the strip's padlock decides what is shown.
     func setPrivate(_ id: HistoryItem.ID, _ isPrivate: Bool) {

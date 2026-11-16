@@ -168,6 +168,19 @@ enum LTXDecodeTiling {
         return (frames, min(second, (Int(Double(frames) * 0.3) / 8) * 8))
     }
 
+    /// "256 px / 32 px tiles · 40 frames / 24 overlap": the decode plan for the log.
+    static func describe(_ config: Config?) -> String {
+        guard let config else { return "no tiling" }
+        var parts: [String] = []
+        if let spatial = config.spatial {
+            parts.append("\(spatial.tile) px tiles / \(spatial.overlap) px overlap")
+        }
+        if let temporal = config.temporal {
+            parts.append("\(temporal.tile) frames / \(temporal.overlap) overlap")
+        }
+        return parts.isEmpty ? "no tiling" : parts.joined(separator: " · ")
+    }
+
     /// No tiling when the whole clip fits the budget; otherwise the first rung that fits: temporal
     /// tiles of 80 down to 40 frames, then 768 / 512 / 256-pixel tiles at 40 frames, then shorter
     /// temporal tiles at 256 pixels.
