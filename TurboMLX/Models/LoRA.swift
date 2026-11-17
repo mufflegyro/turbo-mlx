@@ -145,6 +145,9 @@ nonisolated struct LoRAFileInfo: Hashable, Sendable {
             }
             if let value, (2 ... 60).contains(value) { return value }
         }
+        // A distillation adapter's count, when the name does not say: LTX's distilled LoRA is
+        // trained for the distilled 8-step schedule. A name with "4-step"/"8-step" was read above.
+        if normalized.contains("distilled") || normalized.contains("distill") { return 8 }
         return nil
     }
 

@@ -390,7 +390,7 @@ nonisolated struct ModelDescriptor: Identifiable, Hashable, Codable, Sendable {
     // The Quality mode (`GenerationSettings.fullPipeline(for:)`): LTX's full pipeline runs its dev
     // transformer with guidance for 30 steps, against a negative prompt.
 
-    func stepRange(quality: Bool) -> ClosedRange<Int> { quality && family.isLTX ? 10...50 : stepRange }
+    func stepRange(quality: Bool) -> ClosedRange<Int> { quality && family.isLTX ? 8...50 : stepRange }
     func defaultSteps(quality: Bool) -> Int { quality && family.isLTX ? 30 : defaultSteps }
     func defaultGuidance(quality: Bool) -> Double { quality && family.isLTX ? 3 : defaultGuidance }
     func supportsGuidance(quality: Bool) -> Bool { supportsGuidance || (quality && family.isLTX) }

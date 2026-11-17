@@ -1505,7 +1505,7 @@ private struct ClipSection: View {
                 }
                 .pickerStyle(.segmented)
                 Text(settings.videoQuality
-                     ? "The full model, with guidance and a negative prompt: 30 steps of four passes each. Often truer to the prompt, with fewer flaws, but about ten times slower."
+                     ? "The full model, with guidance and a negative prompt: 30 steps of four passes each (8 with a distilled LoRA). Often truer to the prompt, with fewer flaws, but about ten times slower."
                      : "The distilled model: 8 steps, a few minutes for 5 seconds.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
