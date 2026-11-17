@@ -6,7 +6,7 @@ catalog, the interface, the engine, the keyboard shortcuts — is upstream's, an
 **[upstream's README](https://github.com/rinste/turbo-mlx#readme)** describes it: read that first.
 This file documents only what the fork changes.
 
-**[⬇ Download the fork's latest build](https://github.com/mufflegyro/turbo-mlx/releases/latest)** —
+**[⬇ Download the fork's latest build](https://github.com/mufflegyro/turbo-mlx-network/releases/latest)** —
 a disk image built from this fork (Apple silicon, macOS 15 or later). It is **not notarized**:
 macOS will refuse the app on first launch until you allow it, once — right-click the app and choose
 *Open*, or, after copying it to Applications,
