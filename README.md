@@ -14,6 +14,52 @@ prompts and pictures never leave it.
 
 ![Turbo MLX: settings on the left, the image with its zoom controls and metadata on the right, the history below](docs/screenshot.webp)
 
+## What this fork adds
+
+A personal fork of [rinste/turbo-mlx](https://github.com/rinste/turbo-mlx): the same app, with a
+render-Mac backend, two model families the native engine does not carry, and the workflow features
+added since upstream's 1.12. The download link above goes to upstream's releases — the stock app,
+without any of this; this fork builds its own disk images (`scripts/dev-release.sh`).
+
+- **A render Mac.** Generation can run on a more powerful Mac on the network, the way
+  moss-image-mac drives a ComfyUI server: this app stays the GUI, and a TurboRelay menu bar app (a
+  separate project, not in this repository) owns the models and renders. Reference images and LoRAs
+  are uploaded, previews stream back, results arrive by file id, model downloads come from the
+  server, and the connection reconnects on its own. *Settings → Remote Render* takes the address and
+  a pairing token, with a status row and a log. Jobs made that way are tagged `relay`, so the time
+  estimate's local fit stays clean.
+- **Krea 2 and Qwen-Image 2.1** (base and Turbo) join the catalog in remote mode, run by the relay's
+  mflux worker. The picker and the history thumbnails say native or mflux, *Add Model* recognises
+  both families, and switching back to this Mac selects a native model again.
+- **LoRAs, further.** MOSS-Image adapters run in the native engine; a few-step or DMD adapter sets
+  its own step count and guidance when chosen; the ones a render Mac already has can be imported
+  from it; and the preview shows the LoRA's name and strength beside the model.
+- **Upscaling.** SeedVR2's *Softness* starts at the reduction that reads the result as about 0.35
+  megapixels, as ComfyUI's SeedVR2 workflows scale their input first, with a *Detail* read-out
+  under it; the slider stays free from there.
+- **The history strip** folds down to its header and slides away, doubles as a grip that resizes its
+  thumbnails from 64 to 200 pixels, keeps the scroll place across a fold, tags an upscaled
+  thumbnail with its factor, and has a padlock for a private history that the strip and the gallery
+  show only while it is on.
+- **The gallery** (⇧⌘G): the history as one grid, filtered by the model that made each item, by what
+  it is or by a search of the prompts, remembering the filter and the place between opens.
+- **Prompts and styles** (⇧⌘P): a library of saved prompts (blocks and negative prompt, nothing
+  else), and the MOSS-Image Character & Style Catalog's 314 styles in eight categories, searchable,
+  appended to the prompt's Style block in one click.
+- **Clips.** LTX reaches 20 s at 24/25 fps, the resolution presets gain 720p and 1080p (16:9 gives
+  1280 × 704 and 1920 × 1088), Quality opens at 8 steps and recognises a distilled LoRA as one, and
+  the reference encode and the decode release the transformer before they need the memory.
+- **Custom models.** A precision choice where the family takes one (as stored, or 8-bit),
+  diffusers-layout checkpoints turned away with the reason, the descriptor sent along so a remote
+  download works, the models added by hand on the render Mac listed here, and steps, guidance and
+  negative prompt remembered per model.
+- **Fixes.** Transport events hop to the main actor, which took four crash reports out of model
+  downloads; MOSS-Image reapplies LoRAs when *Save memory* reloads the transformer; a lost clip
+  poster is rebuilt instead of leaving a blank thumbnail.
+
+Builds of this fork carry their own version numbers, and they check for updates by hand rather than
+installing them behind your back: there is no upstream feed to follow here.
+
 ## What you can do
 
 - **Create images** from a description: photos, posters, graphic design, text inside the picture.
@@ -58,8 +104,10 @@ models want more, see the table) and room on the disk for the models you pick.
   runs the full model with guidance and a *Negative Prompt* (30 steps of four passes each, about
   ten times longer), often truer to the prompt and with fewer flaws. Quality downloads the full
   model's transformer the first time (11 GB for the 4-bit models, 21 GB for the 8-bit one).
-- **Upscaling.** With the SeedVR2 upscaler there is no prompt: pick the picture, the scale and,
-  for a noisy or over-sharpened picture, some *Softness*. *Upscale…*, in the menu of any image,
+- **Upscaling.** With the SeedVR2 upscaler there is no prompt: pick the picture and the scale.
+  *Softness* starts at the reduction that reads the result as about 0.35 megapixels first, as
+  ComfyUI's SeedVR2 workflows scale their input; move it either way for a noisy or over-sharpened
+  picture, and *Detail* shows what the upscale starts from. *Upscale…*, in the menu of any image,
   sets it up for you.
 - **Advanced**, for when you want more control: a custom size, the number of steps (more is
   slower, often finer), the seed (random by default), several images at once, a transparent or white background, *Save memory*, the
@@ -83,7 +131,8 @@ models want more, see the table) and room on the disk for the models you pick.
 
 - **The picture or the clip**, with its prompt and details underneath. A clip plays in a loop
   while the app is in front; click it or press Space to pause. Transparent images sit on a
-  checkerboard.
+  checkerboard. The chips under it name the model, the LoRA that shaped it and its strength, the
+  size, the steps and the seed, so a result can be made again.
 - **While it generates:** progress, time left and, with *Live preview*, the image taking shape.
 - **The history**, a strip along the bottom: oldest on the left, newest on the right, or in your
   own order (drag a picture where you want it; the menu next to *History* switches between the
@@ -344,6 +393,14 @@ the container to the signature, and an ad hoc one changes with every build, so m
 new build out of the data an older one left. The script that builds a release,
 `scripts/release.sh`, explains in its header how to set up notarization and publish a version.
 
+For a change to try on the other Macs of the team, `scripts/dev-release.sh` builds and packages
+it without a notarization round trip: a Release build signed Apple Development (from
+`Signing.local.xcconfig`, or the keychain), the next build number written to the project, the app
+and the mounted image verified, and
+`build/release-apple-development/Turbo-MLX-<version>-<build>-apple-development.dmg` written next
+to the earlier ones, which are kept (`--copy-to-desktop` also puts a copy on the Desktop). It
+takes a couple of minutes, the engine being cached.
+
 The project has a second target, *TurboMLX Sealed*: the same sources compiled with `SEALED`, a
 build that does not update itself (no Sparkle) and has no sandbox exception
 (`TurboMLX-Sealed.entitlements`), with an Info.plist of its own and its models in the app's
@@ -438,7 +495,7 @@ TurboMLX/
   Views/      left column, output, history, gallery, settings, log
 Engine/       the engine (Swift package: turbo-engine, TurboEngineCore), its fixtures, the
               mflux reference worker and the licenses of the projects its ports follow (Licenses/)
-scripts/      release.sh, embed-engine.sh, build-engine.sh, ExportOptions.plist, make-icon.swift
+scripts/      release.sh, dev-release.sh, embed-engine.sh, build-engine.sh, ExportOptions.plist, make-icon.swift
               (draws the app icon at every size into the asset catalog), make-acknowledgements.swift
               (the licenses Settings → About shows: Resources/Acknowledgements.txt), make-appcast.sh
               (a release's Sparkle feed)
