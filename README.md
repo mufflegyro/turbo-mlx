@@ -53,6 +53,22 @@ project and not part of this repository — owns the models, the downloads and t
 - The transport seam is `EngineTransport` (`TurboMLX/Services/`): `RemoteBackend` is the HTTP +
   WebSocket client, the local engine is the other side.
 
+### Setting it up
+
+1. On the more powerful Mac, download **TurboRelay** from
+   [its releases](https://github.com/mufflegyro/TurboRelay/releases/latest), drag it to
+   Applications and open it — right-click → *Open* the first time, since it is not notarized. There
+   is no window: it lives in the menu bar, and macOS asks once for local network access.
+2. The menu bar item shows the port (**7700**) and the states; *Copy Pairing Token* puts the
+   pairing token on the clipboard.
+3. Here, **Settings → Remote Render**: turn on *Render on another Mac*, enter
+   `http://<relay-mac>.local:7700` (or that Mac's address) and paste the token, then *Apply*.
+   Switching stops this Mac's engine and loads the relay's model list.
+4. Models download on the relay the first time a job asks for one; the two families only mflux
+   serves install their Python fallback on their first job (Python 3.13, mflux 0.24.0, ~1.1 GB).
+5. Port **7700** has to reach the relay from this Mac. A firewall, or two Macs on different
+   networks, is the usual reason nothing connects.
+
 ## Models this fork adds
 
 They appear in the picker and in Settings only in remote mode; selecting one locally falls back to
@@ -157,10 +173,14 @@ Requirements are upstream's: an Apple silicon Mac with macOS 15 or later and Xco
 (`scripts/embed-engine.sh`, a few minutes the first time).
 
 - `scripts/dev-release.sh` — a development disk image in one command: bumps
-  `CURRENT_PROJECT_VERSION`, builds Release signed with the Apple Development identity in
-  `Signing.local.xcconfig` (or the keychain), verifies the app and the mounted image, and writes
-  `build/release-apple-development/Turbo-MLX-<version>-<build>-apple-development.dmg`. `--build N`
-  takes an exact number, `--copy-to-desktop` also puts a copy on the Desktop.
+  `CURRENT_PROJECT_VERSION`, builds Release signed with the identity in `Signing.local.xcconfig`
+  (or the keychain), verifies the app and the mounted image, and writes
+  `build/release-apple-development/Turbo-MLX-<version>-<build>.dmg`. `--build N`
+  takes an exact number, `--copy-to-desktop` also puts a copy on the Desktop. The fork signs with
+  its own certificate, *Turbo MLX Network*: a team's certificate would name its developer, or that
+  developer's Apple ID email, inside every build shipped from the fork. Its engine is built from a
+  path under the temporary directory, so the C++ `__FILE__` strings in the binary name no home
+  folder; the script refuses to package one that does.
 - `scripts/release.sh` — upstream's notarized release, for a Developer ID certificate and the
   update feed. This fork has no update feed; releases here are the development images.
 - The fork numbers its own builds (`MARKETING_VERSION` 1.12, its own `CURRENT_PROJECT_VERSION`) and
