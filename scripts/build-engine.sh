@@ -14,7 +14,10 @@ set -euo pipefail
 cd "${0:A:h}/.."
 DEST="${1:-build/bin}"
 RESOURCES="${2:-$DEST}"
-DERIVED="build/engine"
+# Where xcodebuild keeps the engine's products and its package checkouts. It is inside the
+# repository by default; a build whose binary leaves this Mac sets ENGINE_DERIVED to a path that
+# names no one, since the C++ a package compiles keeps its absolute __FILE__ paths in the binary.
+DERIVED="${ENGINE_DERIVED:-build/engine}"
 PRODUCTS="$DERIVED/Build/Products/Release"
 # The name of every resource bundle this build has made, one per line.
 MADE="$DERIVED/resource-bundles.txt"
@@ -37,9 +40,12 @@ done
 
 step "Building turbo-engine (Release)"
 # xcodebuild builds a package from its own folder. mlx-swift declares a package plug-in, which
-# xcodebuild will not run unattended unless its validation is skipped.
+# xcodebuild will not run unattended unless its validation is skipped. A derived path under the
+# repository is relative to Engine/, and one given from outside it is absolute.
+derived_argument="../$DERIVED"
+[[ "$DERIVED" == /* ]] && derived_argument="$DERIVED"
 (cd Engine && xcodebuild -quiet -scheme turbo-engine -configuration Release \
-  -destination "platform=macOS,arch=arm64" -derivedDataPath "../$DERIVED" \
+  -destination "platform=macOS,arch=arm64" -derivedDataPath "$derived_argument" \
   -skipPackagePluginValidation -skipMacroValidation build)
 
 BIN=$(find "$PRODUCTS" -maxdepth 1 -type f -name turbo-engine | head -1)

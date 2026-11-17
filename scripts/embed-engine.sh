@@ -30,6 +30,7 @@ fi
 # TOOLCHAINS…), which a build phase gets in its environment; it keeps only what finds Xcode.
 if ! env -i HOME="$HOME" USER="${USER:-}" PATH="/usr/bin:/bin:/usr/sbin:/sbin" \
       ${DEVELOPER_DIR:+DEVELOPER_DIR="$DEVELOPER_DIR"} \
+      ${ENGINE_DERIVED:+ENGINE_DERIVED="$ENGINE_DERIVED"} \
       /bin/zsh scripts/build-engine.sh "$BIN_DIR" "$RES_DIR"; then
   print "error: turbo-engine did not build; its xcodebuild output is above"
   rm -f "$ENGINE"
