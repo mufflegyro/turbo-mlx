@@ -231,6 +231,8 @@ final class AppModel {
                 preloadIfUseful()
             }
             guard selectedModelID != oldValue, let model = selectedModel else { return }
+            // An upscaler takes its softness from the picture it will enlarge.
+            if controlsSource == .draft, model.family.isUpscaler { settings.applyDefaultSoftness() }
             let previous = models.first(where: { $0.id == oldValue })
             // Only the draft edits a model's settings; a history item shows a snapshot and must
             // not overwrite what the model was last run with.
@@ -1623,6 +1625,7 @@ final class AppModel {
             do {
                 var new = settings
                 new.referenceImage = try await HistoryStore.importReference(from: url)
+                new.applyDefaultSoftness()
                 replaceControls(with: new, modelID: model.id, viewer: .draft, source: .draft, actionName: "Upscale",
                                 undoManager: undoManager)
             } catch {
@@ -1638,7 +1641,13 @@ final class AppModel {
         Task {
             do {
                 let name = try await HistoryStore.importReference(from: url)
-                if lastFrame { settings.lastFrameImage = name } else { settings.referenceImage = name }
+                if lastFrame {
+                    settings.lastFrameImage = name
+                } else {
+                    settings.referenceImage = name
+                    // The upscaler's softness follows the picture it enlarges.
+                    if selectedModel?.family.isUpscaler == true { settings.applyDefaultSoftness() }
+                }
             } catch {
                 alert = AppAlert(title: "Couldn’t use the image", message: error.localizedDescription)
             }

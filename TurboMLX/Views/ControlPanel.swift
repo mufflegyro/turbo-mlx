@@ -1271,6 +1271,10 @@ private struct ReferenceImageSection: View {
                     .foregroundStyle(.secondary)
             }
         }
+        .onChange(of: settings.referenceImage) { _, name in
+            // A picture picked for the upscaler starts from the softness its size calls for.
+            if isUpscaler, name != nil { settings.applyDefaultSoftness() }
+        }
     }
 
     private var prompt: String {
@@ -1819,6 +1823,7 @@ private struct UpscaleSection: View {
             }
             .pickerStyle(.segmented)
             .help("How many times larger each side of the picture becomes")
+            .onChange(of: settings.upscale) { _, _ in settings.applyDefaultSoftness() }
 
             LabeledContent {
                 HStack(spacing: 6) {
@@ -1831,10 +1836,17 @@ private struct UpscaleSection: View {
                 }
             } label: {
                 Text("Softness")
-                    .help("0% keeps the picture’s own detail. Higher values shrink it first (up to 8 times), for smoother results from a noisy, compressed or over-sharpened picture; 50% is a good start.")
+                    .help("Starts at the reduction that reads the picture as about 0.35 megapixels first, as ComfyUI’s SeedVR2 workflows scale their input. Higher values reduce it further (up to 8 times), for smoother results from a noisy, compressed or over-sharpened picture; 0% keeps its own detail.")
             }
 
             if let size = settings.upscaledSize {
+                let detail = Upscale.detailSize(of: size, softness: settings.softness)
+                LabeledContent("Detail") {
+                    Text(verbatim: "\(detail.megapixels.formatted(.number.precision(.fractionLength(1)))) MP")
+                        .monospacedDigit()
+                }
+                .help("What the upscale starts from: the picture reduced to this size first, then enlarged from it.")
+
                 LabeledContent("Image") {
                     Text(verbatim: "\(size.width) × \(size.height) px · \(size.megapixels.formatted(.number.precision(.fractionLength(1)))) MP")
                         .monospacedDigit()

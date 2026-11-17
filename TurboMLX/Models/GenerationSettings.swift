@@ -229,6 +229,13 @@ nonisolated struct GenerationSettings: Codable, Equatable, Sendable {
         referenceImage.flatMap(ReferencePicture.size).map { Upscale.outputSize(of: $0, factor: upscale) }
     }
 
+    /// The softness an upscale starts with: the step that reads the result at about 0.35 megapixels,
+    /// as ComfyUI's SeedVR2 graphs scale their input down first. The slider still overrides it until
+    /// the picture or the scale changes again.
+    mutating func applyDefaultSoftness() {
+        if let size = upscaledSize { softness = Upscale.defaultSoftness(for: size) }
+    }
+
     /// The clip's frames: 8k + 1 (LTX-2's latent frames cover eight), nearest to the duration.
     var videoFrames: Int {
         Int((videoSeconds * Double(videoFrameRate) / 8).rounded()) * 8 + 1
@@ -511,11 +518,31 @@ nonisolated enum Upscale {
     /// The largest result: 4096 × 4096 takes about 2 minutes on an M1 Max and peaks at 18 GB.
     static let maxMegapixels = 16.8
 
+    /// What a SeedVR2 upscale starts from in ComfyUI's graphs, where the picture is first scaled to
+    /// 0.35 megapixels (`ImageScaleToTotalPixels`) and then enlarged: a small base, so the model
+    /// adds the detail rather than working on an already-large picture.
+    static let comfyDetailMegapixels = 0.35
+
     static func outputSize(of picture: PixelSize, factor: Double) -> PixelSize {
         let shorter = Double(min(picture.width, picture.height))
         let product = factor * shorter
         let scale = (product - product.truncatingRemainder(dividingBy: 16)).rounded(.towardZero) / shorter
         return PixelSize(width: Int(Double(picture.width) * scale) / 2 * 2, height: Int(Double(picture.height) * scale) / 2 * 2)
+    }
+
+    /// The softness step (in tenths) that reads a `size` result at about `comfyDetailMegapixels`:
+    /// the picture is reduced by the square root of how many times the result holds that base.
+    static func defaultSoftness(for size: PixelSize) -> Double {
+        let reduction = (size.megapixels / comfyDetailMegapixels).squareRoot()
+        return (min(max((reduction - 1) / 7, 0), 1) * 10).rounded() / 10
+    }
+
+    /// The picture as `softness` reduces it before the upscale, as the engine does it
+    /// (`SeedVR2Picture.input`): each side over 1 to 8.
+    static func detailSize(of size: PixelSize, softness: Double) -> PixelSize {
+        let reduction = 1 + min(max(softness, 0), 1) * 7
+        return PixelSize(width: max(2, Int(Double(size.width) / reduction)),
+                         height: max(2, Int(Double(size.height) / reduction)))
     }
 }
 
