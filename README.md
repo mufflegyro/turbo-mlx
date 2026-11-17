@@ -20,6 +20,8 @@ prompts and pictures never leave it.
 - **Edit a picture** by saying what to change ("make it winter"): the rest stays as it was.
 - **Make short videos with sound**, from a description or starting from a picture.
 - **Upscale** a picture 2, 3 or 4 times, with sharper detail.
+- **Find it again in the gallery**: everything you made as one grid, filtered by the model that
+  made it, by what it is, or by a search.
 
 ## Getting started
 
@@ -89,6 +91,12 @@ models want more, see the table) and room on the disk for the models you pick.
 - **Going back to an earlier one:** click it (or use ← →) to see it again. Its prompt, model and
   settings return to the left column, with a new seed, so you can make variations; ⌘Z restores
   what you had there before.
+- **The gallery** (*Gallery…* in the *Generate* menu, or ⇧⌘G): the same history as a grid, for
+  finding things — filter by the model that made an image, by what it is (image, clip, 3D object,
+  song), or search the prompts. Clicking a picture puts it on the stage and its settings back in
+  the controls, as clicking it in the strip does; the strip's padlock decides which history it
+  browses. The model filter and the grid's position are kept between opens, so picking up
+  browsing again is one click.
 - **The + at the end of the strip** is the next generation you are preparing. What you change
   there is kept, even after quitting, while you look through the history.
 - **Taking a picture out:** drag it to Finder or another app, or copy it.
@@ -105,6 +113,7 @@ models want more, see the table) and room on the disk for the models you pick.
 | Actual size / fit to the window | ⌘0 / ⌘9 |
 | Move around a zoomed picture | drag, two-finger scroll (⌥-wheel with a mouse) |
 | Undo a change to the settings | ⌘Z |
+| Open the gallery | ⇧⌘G |
 | Settings / Engine Log | ⌘, / ⌥⌘L |
 
 ## Models
@@ -426,7 +435,7 @@ TurboMLX/
   App/        entry point, AppModel (queue, engine events, selection, persistence)
   Models/     catalog and families, settings, jobs, history items
   Services/   the engine process, downloads, Hugging Face cache, history
-  Views/      left column, output, history, settings, log
+  Views/      left column, output, history, gallery, settings, log
 Engine/       the engine (Swift package: turbo-engine, TurboEngineCore), its fixtures, the
               mflux reference worker and the licenses of the projects its ports follow (Licenses/)
 scripts/      release.sh, embed-engine.sh, build-engine.sh, ExportOptions.plist, make-icon.swift

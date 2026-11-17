@@ -82,6 +82,7 @@ struct HistoryStrip: View {
                 .help(isCollapsed ? "Show the history thumbnails" : "Hide the history thumbnails")
                 .accessibilityLabel(isCollapsed ? "Show History" : "Hide History")
                 Menu {
+                    Button("Open Gallery…") { app.presentedSheet = .gallery }
                     Button("Show Folder in Finder") {
                         NSWorkspace.shared.open(HistoryStore.directory)
                     }

@@ -113,6 +113,14 @@ struct OutputPanel: View {
             .help(historyCollapsed ? "Show the history thumbnails" : "Hide the history thumbnails")
             .accessibilityLabel(historyCollapsed ? "Show History" : "Hide History")
         }
+        ToolbarItem(placement: .automatic) {
+            Button {
+                app.presentedSheet = .gallery
+            } label: {
+                Label("Gallery", systemImage: "square.grid.3x3")
+            }
+            .help("Browse the history as a grid, filtered by model, kind and prompt (⇧⌘G)")
+        }
         ToolbarItemGroup(placement: .primaryAction) {
             let item = app.displayedItem
             Button {

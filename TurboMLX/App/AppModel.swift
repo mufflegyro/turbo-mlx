@@ -341,6 +341,7 @@ final class AppModel {
         static let draftModel = "draftModelID"
         static let modelTunings = "modelTunings"
         static let historyOrder = "historyOrder"
+        static let galleryModelFilter = "galleryModelFilter"
         static let remoteEnabled = "remoteEnabled"
         static let remoteAddress = "remoteAddress"
         static let remoteToken = "remoteToken"
@@ -1096,8 +1097,29 @@ final class AppModel {
 
     var showsDraft: Bool { viewer == .draft }
 
-    /// The Styles & Prompts browser: a sheet on the main window, so it stays in front until closed.
-    var showsPromptLibrary = false
+    /// The sheet the main window is showing, one at a time: a menu command while one is up
+    /// (⇧⌘G with Styles & Prompts open) switches to it, instead of setting a flag no sheet can
+    /// present and then popping up unasked once the first closes.
+    enum WindowSheet: String, Identifiable {
+        case promptLibrary
+        case gallery
+
+        var id: String { rawValue }
+    }
+
+    var presentedSheet: WindowSheet?
+
+    /// The first item showing in the gallery's grid, kept while the sheet is closed (its state
+    /// does not survive being rebuilt on each open), so reopening returns there: picking up
+    /// browsing is one click, not a scroll.
+    var galleryScrollsTo: HistoryItem.ID?
+
+    /// The model the gallery is filtered by, kept between opens and launches: the browser stays
+    /// on the model you were last looking at. Nil for all models; the gallery drops it if the
+    /// history no longer holds that model's items.
+    var galleryModelFilter: String? = UserDefaults.standard.string(forKey: Keys.galleryModelFilter) {
+        didSet { UserDefaults.standard.set(galleryModelFilter, forKey: Keys.galleryModelFilter) }
+    }
 
     /// Appends a style prompt to the Style block (creating the block when the prompt has none).
     /// The prompt alone changes: the model, size, steps, seed, transparency and LoRAs stay.

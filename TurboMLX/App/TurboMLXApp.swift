@@ -104,8 +104,11 @@ private struct GenerationCommands: Commands {
 
             Divider()
 
-            Button("Styles & Prompts…") { model.showsPromptLibrary = true }
+            Button("Styles & Prompts…") { model.presentedSheet = .promptLibrary }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
+
+            Button("Gallery…") { model.presentedSheet = .gallery }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
 
             Divider()
 

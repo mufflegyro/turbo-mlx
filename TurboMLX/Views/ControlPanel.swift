@@ -858,7 +858,7 @@ private struct PromptSection: View {
                         .labelStyle(.titleAndIcon)
                         .help("Add a block at the end: the blocks are joined, in order, into one prompt")
                     Button("Styles & Prompts…", systemImage: "text.book.closed") {
-                        app.showsPromptLibrary = true
+                        app.presentedSheet = .promptLibrary
                     }
                     .labelStyle(.titleAndIcon)
                     .help("Browse style prompts and your saved prompts (⇧⌘P)")

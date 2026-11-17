@@ -75,6 +75,9 @@ struct PromptLibraryView: View {
             footer
         }
         .frame(minWidth: 900, idealWidth: 1040, minHeight: 600, idealHeight: 700)
+        // .fitted opens the sheet at the frame's ideal: without it, macOS opens it at the
+        // minimum width instead (900 wide, not the 1040 the ideal asks for).
+        .presentationSizing(.fitted)
         .background(Color(nsColor: .windowBackgroundColor))
         .alert("Save Current Prompt", isPresented: $showsSave) {
             TextField("Name", text: $newName, prompt: Text("Untitled Prompt"))
