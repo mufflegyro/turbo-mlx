@@ -1505,8 +1505,8 @@ private struct ClipSection: View {
                 }
                 .pickerStyle(.segmented)
                 Text(settings.videoQuality
-                     ? "The full model, with guidance and a negative prompt: 30 steps of four passes each (8 with a distilled LoRA). Often truer to the prompt, with fewer flaws, but about ten times slower."
-                     : "The distilled model: 8 steps, a few minutes for 5 seconds.")
+                     ? "The full model, with guidance and a negative prompt: 30 steps of four passes each, plus 3 refinement steps (8 + 3 with a distilled LoRA). Often truer to the prompt, with fewer flaws, but about ten times slower."
+                     : "The distilled model: 8 + 3 refinement steps, a few minutes for 5 seconds.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1964,7 +1964,9 @@ private struct StepsRow: View {
             }
         } label: {
             Text("Steps")
-                .help("Recommended for this model: \(model.defaultSteps(quality: quality)). More steps take longer and don’t always improve the result.")
+                .help("Recommended for this model: \(model.defaultSteps(quality: quality))."
+                      + (model.family.isLTX ? " LTX-2's steps are stage 1's; the 3-step full-resolution refinement is added, and the progress counter includes it." : "")
+                      + " More steps take longer and don’t always improve the result.")
         }
     }
 }
