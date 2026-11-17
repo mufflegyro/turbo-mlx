@@ -61,12 +61,18 @@ struct MetadataChip: View {
     let systemImage: String
     let text: String
     var help: String?
+    /// Keeps a long value (a LoRA's name, say) from widening the row: it is cut from the middle,
+    /// the whole of it in the tooltip.
+    var maxWidth: CGFloat?
 
     var body: some View {
         Label(text, systemImage: systemImage)
             .labelStyle(.titleAndIcon)
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .frame(maxWidth: maxWidth)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
             .background(.quaternary.opacity(0.6), in: Capsule())

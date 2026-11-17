@@ -416,10 +416,6 @@ private struct ItemInfoBar: View {
                             Text("Negative: \(negativePrompt)")
                                 .foregroundStyle(.secondary)
                         }
-                        if let loras = item.request.loras, !loras.isEmpty {
-                            Text("LoRA: " + loras.map { "\($0.name) \($0.scaleLabel)" }.joined(separator: ", "))
-                                .foregroundStyle(.secondary)
-                        }
                     }
                     .font(.callout)
                     .textSelection(.enabled)
@@ -437,6 +433,14 @@ private struct ItemInfoBar: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     MetadataChip(systemImage: "cpu", text: shortModelName, help: "\(item.modelName)\n\(item.modelID)")
+                    if let loras = item.request.loras, !loras.isEmpty {
+                        // The add-on that shaped the picture: its name and how strongly it applied.
+                        ForEach(loras, id: \.self) { lora in
+                            MetadataChip(systemImage: "wand.and.stars", text: "\(lora.name) \(lora.scaleLabel)",
+                                         help: "LoRA: \(lora.name)\nStrength \(lora.scaleLabel)",
+                                         maxWidth: 200)
+                        }
+                    }
                     if let gaussians = item.request.numGaussians {
                         MetadataChip(systemImage: "cube", text: "\(ObjectDetail.label(gaussians)) Gaussians",
                                      help: "\(gaussians) Gaussians, from a \(item.request.objectMode == ObjectMode.photo.rawValue ? "photo" : "render")")
